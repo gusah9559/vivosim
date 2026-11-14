@@ -29,15 +29,63 @@ is*, so changing one does not require refitting the other. That is what lets
 the same compound be simulated in a mouse and then a rat, or moved from
 intravenous to oral dosing, without starting over.
 
-## Install
+## Quickstart
 
 ```bash
-pip install -e ".[dev]"
+pip install -e .
+vivosim demo interaction --open
 ```
 
-Requires Python 3.10+, NumPy and SciPy.
+That renders a worked example and opens it. To run your own study, write one
+small text file — no Python needed:
 
-## Use
+```bash
+vivosim new study.toml      # a commented starter file
+vivosim run study.toml --open
+```
+
+`study.toml` looks like this. Units are milligrams, litres and hours
+throughout:
+
+```toml
+[species]
+name = "rat"                 # rat, mouse or human
+body_weight_kg = 0.25
+# condition = "hepatic impairment (moderate)"   # see: vivosim conditions
+
+[simulation]
+duration_h = 48
+# population = 200           # simulate this many individuals instead of one
+# seed = 42
+
+[[compound]]
+name = "drug A"
+fraction_unbound_plasma = 0.2          # measured
+default_partition_coefficient = 2.0    # or: smiles = "CC(C)Cc1ccc..."
+hepatic_intrinsic_clearance_L_per_h = 2.0
+
+  [[compound.dose]]
+  route = "iv"               # iv, infusion or oral
+  amount_mg = 1.0
+```
+
+Add a second `[[compound]]` and they are simulated **together**, competing for
+any enzyme they share, and compared against their solo runs. Add
+`population = 200` and you get the spread across individuals instead of one
+animal. The page it renders is a single self-contained HTML file.
+
+| Command | |
+|---|---|
+| `vivosim demo` | list the built-in examples |
+| `vivosim new study.toml` | write a commented starter file |
+| `vivosim run study.toml --open` | simulate and open the result |
+| `vivosim conditions` | list the disease states |
+| `vivosim validate` | check the model against published data |
+
+Requires Python 3.10+, NumPy and SciPy. Reading molecular structures also needs
+RDKit (`pip install "vivosim[chem]"`).
+
+## From Python
 
 ```python
 from vivosim import Compound, IVBolus, Regimen, get_physiology, simulate
@@ -372,6 +420,13 @@ The page carries:
 Charts are drawn as inline SVG with no plotting library, which is what keeps the
 file self-contained. Light and dark are both designed rather than inverted, and
 the categorical palette is validated for colour-vision deficiency.
+
+Two skins ship: a plain one, and a **HUD** skin (the toggle in the header) with
+a darker surface, monospaced readouts, corner brackets and glow. The series
+colours are deliberately *identical* between them — a palette is safe because
+of how its hues are spaced and ordered, so swapping in neon ones to suit a mood
+would quietly break colour-vision separation. The character comes from
+everything else, which costs nothing in legibility.
 
 ## Model structure
 

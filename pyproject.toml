@@ -22,7 +22,11 @@ classifiers = [
 dependencies = [
     "numpy>=1.24",
     "scipy>=1.11",
+    "tomli>=2.0; python_version < '3.11'",
 ]
+
+[project.scripts]
+vivosim = "vivosim.cli:main"
 
 [project.optional-dependencies]
 # Reading molecular structures (SMILES -> logP, descriptors).
