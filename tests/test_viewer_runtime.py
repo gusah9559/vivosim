@@ -138,3 +138,63 @@ def test_tissue_names_reach_the_rendered_page(chrome: str, tmp_path: Path) -> No
     dom = load_dom(chrome, render_demo(tmp_path))
     for tissue in ("Liver", "Adipose", "Brain", "Kidney"):
         assert tissue in dom, tissue
+
+
+def render_interaction(tmp_path: Path) -> Path:
+    """A victim and an inhibitor, with the alone-against-together comparison."""
+    from vivosim import Inhibition, IVInfusion, Metabolism, assess_interaction
+
+    victim = Compound(
+        name="Victim",
+        partition_coefficients={"adipose": 8.0, "liver": 4.0},
+        default_partition_coefficient=2.0,
+        fraction_unbound_plasma=0.5,
+        metabolism=(Metabolism(enzyme="CYP3A4", vmax_mg_per_h=2.0, km_mg_per_L=0.5),),
+    )
+    inhibitor = Compound(
+        name="Inhibitor",
+        default_partition_coefficient=2.0,
+        fraction_unbound_plasma=0.5,
+        inhibits=(Inhibition(enzyme="CYP3A4", ki_mg_per_L=0.05),),
+    )
+    report = assess_interaction(
+        [victim, inhibitor],
+        RAT,
+        [Regimen(IVBolus(1.0)), Regimen(IVInfusion(20.0, duration_h=48.0))],
+        duration_h=48,
+    )
+    return render_html(report, tmp_path / "ddi.html")
+
+
+def test_interaction_page_loads_without_throwing(chrome: str, tmp_path: Path) -> None:
+    dom = load_dom(chrome, render_interaction(tmp_path))
+    error = re.search(r'id="startup-error">(.*?)</pre>', dom, re.S)
+    assert error is None, f"the viewer threw on load: {error.group(1) if error else ''}"
+
+
+def test_interaction_page_draws_the_comparison(chrome: str, tmp_path: Path) -> None:
+    dom = load_dom(chrome, render_interaction(tmp_path))
+    # Match the drawn element, not the stylesheet rule that names the class:
+    # the rule is in the template whether or not anything was plotted.
+    assert 'class="solo-path"' in dom, "the alone-against-together chart was not drawn"
+    # One band per compound. The exact band depends on the scenario, so assert
+    # that a real one was reported rather than pinning a particular strength.
+    assert dom.count('class="band"') >= 2
+    assert re.search(r'class="band"[^>]*>(strong|moderate|weak)<', dom), (
+        "the victim's interaction band was not reported"
+    )
+    assert 'data-affected="false"' in dom, "the unaffected compound was not marked"
+
+
+def test_interaction_page_offers_a_compound_selector(chrome: str, tmp_path: Path) -> None:
+    dom = load_dom(chrome, render_interaction(tmp_path))
+    assert "Victim" in dom and "Inhibitor" in dom
+    # The selector is only revealed when there is more than one compound.
+    assert 'id="compound-controls" hidden' not in dom
+
+
+def test_single_compound_page_hides_the_interaction_card(chrome: str, tmp_path: Path) -> None:
+    # Nothing was compared, so the comparison card must stay out of the way.
+    dom = load_dom(chrome, render_demo(tmp_path))
+    assert 'id="interaction-card" hidden' in dom
+    assert 'id="compound-controls" hidden' in dom

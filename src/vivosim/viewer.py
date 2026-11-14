@@ -27,8 +27,9 @@ from typing import Any
 import numpy as np
 
 from .dosing import IVBolus, IVInfusion, OralDose
+from .interaction import InteractionReport
 from .partitioning import volume_of_distribution_L_per_kg
-from .results import Result
+from .results import Result, Study
 
 __all__ = ["render_html", "show", "build_payload"]
 
@@ -60,24 +61,61 @@ _BULK_GAP = 6
 _BULK_START_X = 52
 
 
-def build_payload(result: Result, title: str | None = None) -> dict[str, Any]:
+Displayable = Result | Study | InteractionReport
+
+
+def build_payload(result: Displayable, title: str | None = None) -> dict[str, Any]:
     """Assemble everything the viewer page needs, as plain JSON-ready data.
 
     Separated from file writing so the payload can be inspected, tested, or
     embedded in a different page.
 
     Args:
-        result: The simulation to display.
-        title: Heading for the page. Defaults to the compound's name.
+        result: What to display -- one simulation, a `Study` of several
+            compounds simulated together, or an `InteractionReport` comparing
+            them against their solo runs.
+        title: Heading for the page. Defaults to the compound's name, or a
+            summary when several compounds are shown.
 
     Returns:
         A JSON-serialisable mapping.
     """
-    model = result.model
-    physiology = model.physiology
-    compound = model.compound
+    report = result if isinstance(result, InteractionReport) else None
+    if report is not None:
+        results = [entry.together for entry in report]
+    elif isinstance(result, Study):
+        results = list(result)
+    else:
+        results = [result]
 
-    tissues = [name for name in physiology.tissues]
+    physiology = results[0].model.physiology
+    tissues = list(physiology.tissues)
+    series_order = ["plasma", *tissues]
+
+    blocks = [_compound_block(one, tissues) for one in results]
+    if title is None:
+        title = (
+            blocks[0]["name"]
+            if len(blocks) == 1
+            else " + ".join(block["name"] for block in blocks)
+        )
+
+    return {
+        "title": title,
+        "subject": _describe_subject(physiology),
+        "time": _clean(results[0].time_h),
+        "tissueOrder": tissues,
+        "labels": _labels(series_order),
+        "anatomy": _anatomy_layout(tissues),
+        "anatomyDecades": _ANATOMY_DECADES,
+        "compounds": blocks,
+        "interaction": _interaction_block(report),
+        "footer": _footer(results),
+    }
+
+
+def _compound_block(result: Result, tissues: list[str]) -> dict[str, Any]:
+    """Everything the page needs about one compound."""
     series: dict[str, list[float]] = {
         "plasma": _clean(result.plasma_concentration()),
         "blood": _clean(result.blood_concentration()),
@@ -85,7 +123,6 @@ def build_payload(result: Result, title: str | None = None) -> dict[str, Any]:
     for tissue in tissues:
         series[tissue] = _clean(result.tissue_concentration(tissue))
 
-    series_order = ["plasma", *tissues]
     default_visible = [
         name for name in ("plasma", "liver", "adipose", "muscle") if name in series
     ]
@@ -103,31 +140,46 @@ def build_payload(result: Result, title: str | None = None) -> dict[str, Any]:
     default_time_index = int(np.argmax(tissue_matrix.sum(axis=0)))
 
     return {
-        "compound": title if title is not None else compound.name,
-        "subject": _describe_subject(physiology),
+        "name": result.model.compound.name,
         "regimen": _describe_regimen(result),
-        "time": _clean(result.time_h),
         "series": series,
-        "seriesOrder": series_order,
-        "tissueOrder": tissues,
+        "seriesOrder": ["plasma", *tissues],
         "defaultVisible": default_visible,
-        "labels": _labels(series_order),
         "tiles": _tiles(result),
         "doseEvents": _dose_events(result),
-        "anatomy": _anatomy_layout(tissues),
         "anatomyMax": anatomy_max if anatomy_max > 0 else 1.0,
-        "anatomyDecades": _ANATOMY_DECADES,
         "multiplesMax": anatomy_max if anatomy_max > 0 else 1.0,
         "defaultTimeIndex": default_time_index,
-        "footer": _footer(result),
     }
 
 
-def render_html(result: Result, path: str | Path, *, title: str | None = None) -> Path:
+def _interaction_block(report: InteractionReport | None) -> dict[str, Any] | None:
+    """The alone-against-together comparison, when there is one."""
+    if report is None:
+        return None
+    return {
+        "enzymes": report.interacting_enzymes(),
+        "compounds": [
+            {
+                "name": entry.name,
+                "aucAlone": entry.auc_alone,
+                "aucTogether": entry.auc_together,
+                "aucRatio": entry.auc_ratio,
+                "cmaxRatio": entry.cmax_ratio,
+                "classification": entry.classification,
+                "affected": entry.is_affected,
+                "aloneSeries": _clean(entry.alone.plasma_concentration()),
+            }
+            for entry in report
+        ],
+    }
+
+
+def render_html(result: Displayable, path: str | Path, *, title: str | None = None) -> Path:
     """Write a self-contained interactive viewer for a result.
 
     Args:
-        result: The simulation to display.
+        result: What to display -- a `Result`, `Study` or `InteractionReport`.
         path: Where to write the HTML file.
         title: Heading for the page. Defaults to the compound's name.
 
@@ -137,7 +189,7 @@ def render_html(result: Result, path: str | Path, *, title: str | None = None) -
     payload = build_payload(result, title)
     template = _TEMPLATE.read_text(encoding="utf-8")
 
-    heading = payload["compound"]
+    heading = payload["title"]
     page = template.replace("__TITLE__", _escape(f"{heading} — vivosim"))
     # The payload goes inside a <script type="application/json"> block, so only
     # a literal "</script>" could break out of it.
@@ -152,7 +204,7 @@ def render_html(result: Result, path: str | Path, *, title: str | None = None) -
 
 
 def show(
-    result: Result,
+    result: Displayable,
     *,
     title: str | None = None,
     path: str | Path | None = None,
@@ -182,7 +234,7 @@ def show(
         path = directory / "viewer.html"
 
     rendered = render_html(result, path, title=title)
-    heading = title if title is not None else result.model.compound.name
+    heading = title if title is not None else build_payload(result, title)["title"]
 
     if native:
         try:
@@ -329,17 +381,23 @@ def _anatomy_layout(tissues: list[str]) -> list[dict[str, Any]]:
     return layout
 
 
-def _footer(result: Result) -> str:
-    compound = result.model.compound
+def _footer(results: list[Result]) -> str:
+    parameters = " \u00b7 ".join(
+        f"<strong>{_escape(r.model.compound.name)}</strong>: "
+        f"f<sub>u,p</sub> {r.model.compound.fraction_unbound_plasma:g}, "
+        f"blood:plasma {r.model.compound.blood_plasma_ratio:g}, "
+        f"hepatic CL<sub>int</sub> "
+        f"{r.model.compound.linear_hepatic_clearance_L_per_h:g} L/h, "
+        f"renal CL {r.model.compound.renal_clearance_L_per_h:g} L/h"
+        for r in results
+    )
     return (
         "<strong>Research and teaching tool.</strong> This is a numerical "
         "experiment, not evidence about any real compound, and not a clinical, "
         "veterinary or regulatory tool. It does not recommend doses. Output is "
-        "only as good as the parameters supplied: "
-        f"f<sub>u,p</sub> {compound.fraction_unbound_plasma:g}, "
-        f"blood:plasma {compound.blood_plasma_ratio:g}, "
-        f"hepatic CL<sub>int</sub> {compound.hepatic_intrinsic_clearance_L_per_h:g} L/h, "
-        f"renal CL {compound.renal_clearance_L_per_h:g} L/h. "
+        "only as good as the parameters supplied. "
+        + parameters + ". "
+        
         "Physiological values are literature means for a typical healthy animal. "
         "Generated by vivosim."
     )

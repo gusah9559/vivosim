@@ -26,6 +26,12 @@ Example:
 from .compound import Compound
 from .coupled import CoupledModel
 from .dosing import Dose, IVBolus, IVInfusion, OralDose, Regimen, repeated
+from .interaction import (
+    CompoundInteraction,
+    InteractionReport,
+    assess_interaction,
+    classify_ratio,
+)
 from .kinetics import Inhibition, Metabolism
 from .model import PBPKModel
 from .partitioning import (
@@ -53,9 +59,11 @@ __all__ = [
     "RAT_TISSUE_COMPOSITION",
     "SPECIES",
     "Compound",
+    "CompoundInteraction",
     "CoupledModel",
     "Dose",
     "Inhibition",
+    "InteractionReport",
     "IVBolus",
     "IVInfusion",
     "Metabolism",
@@ -70,6 +78,8 @@ __all__ = [
     "TissueSpec",
     "__version__",
     "apparent_logd",
+    "assess_interaction",
+    "classify_ratio",
     "compound_from_properties",
     "get_physiology",
     "predict_partition_coefficients",

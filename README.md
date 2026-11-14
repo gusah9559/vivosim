@@ -185,8 +185,28 @@ study["victim"].auc("plasma")     # 19.6, against 6.2 for the victim alone
 study.interacting_enzymes()       # {'CYP3A4': ['victim', 'inhibitor']}
 ```
 
-This cannot be reproduced by simulating each compound separately and overlaying
-the results: the interaction is a property of the pair. A substrate competes
+`assess_interaction` makes the comparison the field actually asks for, running
+each compound twice on the identical regimen and time grid -- once beside the
+others, once by itself:
+
+```python
+from vivosim import assess_interaction
+
+report = assess_interaction([victim, inhibitor], physiology, regimens, duration_h=72)
+
+report["victim"].auc_ratio        # 3.15
+report["victim"].classification   # 'moderate'
+report.affected()                 # [victim] -- the inhibitor is unchanged
+```
+
+The ratio is banded by the thresholds regulators use for interaction strength
+(>=5 strong, >=2 moderate, >=1.25 weak). Those bands describe clinical
+significance in humans and this is a simulated rat; the vocabulary is borrowed
+because it is how the field talks about magnitude, not because a number from
+here is a finding about anything.
+
+None of this can be reproduced by simulating each compound separately and
+overlaying the results: the interaction is a property of the pair. A substrate competes
 through its own Km — occupying the site is what matters, not whether the
 occupier is turned over — and a pure inhibitor declares a Ki without being
 metabolised. Compounds on *different* enzymes are verified to be unaffected by
@@ -204,6 +224,8 @@ from vivosim.viewer import render_html, show
 
 render_html(result, "profile.html")   # a file you can mail, attach or commit
 show(result)                          # opens it, natively if pywebview is installed
+
+render_html(report, "interaction.html")   # a Study or an interaction report too
 ```
 
 `render_html` writes **one self-contained HTML file**. The data is embedded in
@@ -219,6 +241,12 @@ two ways to open it.
 
 The page carries:
 
+- **An interaction panel**, when given an `assess_interaction` report: each
+  compound's exposure alone against together, the ratio and its band, and the
+  two plasma curves overlaid — solid for together, dashed for alone, so the gap
+  between them *is* the interaction.
+- **A compound selector**, when several were simulated, switching every panel
+  on the page between them.
 - **Headline metrics** — peak plasma, time of peak, AUC, Vss, fraction
   eliminated, and the mass balance error, so a bad integration is visible rather
   than hidden.
