@@ -1,0 +1,945 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --plane: #f9f9f7;
+    --ink-1: #0b0b0b;
+    --ink-2: #52514e;
+    --ink-muted: #898781;
+    --grid: #e1e0d9;
+    --axis: #c3c2b7;
+    --hairline: rgba(11, 11, 11, 0.10);
+    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a;
+    --s4: #eda100; --s5: #e87ba4; --s6: #008300;
+    /* Sequential blue ramp, light -> dark, for concentration magnitude. */
+    --q0: #cde2fb; --q1: #9ec5f4; --q2: #6da7ec; --q3: #3987e5;
+    --q4: #2a78d6; --q5: #1c5cab; --q6: #104281;
+    --organ-empty: #eceae3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-1: #1a1a19;
+      --plane: #0d0d0d;
+      --ink-1: #f0efec;
+      --ink-2: #c3c2b7;
+      --ink-muted: #898781;
+      --grid: #2c2c2a;
+      --axis: #383835;
+      --hairline: rgba(255, 255, 255, 0.10);
+      --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+      --s4: #c98500; --s5: #d55181; --s6: #008300;
+      --organ-empty: #26261f;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --plane: #0d0d0d;
+    --ink-1: #f0efec;
+    --ink-2: #c3c2b7;
+    --ink-muted: #898781;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --hairline: rgba(255, 255, 255, 0.10);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+    --s4: #c98500; --s5: #d55181; --s6: #008300;
+    --organ-empty: #26261f;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--plane);
+    color: var(--ink-1);
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 32px 16px 64px; }
+
+  header { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 4px; }
+  h1 { font-size: 22px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+  .subject { color: var(--ink-2); font-size: 13px; }
+  .regimen { color: var(--ink-muted); font-size: 13px; margin: 2px 0 24px; }
+  .theme-toggle {
+    margin-left: auto; background: none; border: 1px solid var(--hairline);
+    color: var(--ink-2); border-radius: 6px; padding: 5px 10px;
+    font: inherit; font-size: 12px; cursor: pointer;
+  }
+  .theme-toggle:hover { border-color: var(--axis); color: var(--ink-1); }
+
+  .card {
+    background: var(--surface-1); border: 1px solid var(--hairline);
+    border-radius: 10px; padding: 20px; margin-bottom: 20px;
+  }
+  .card > h2 {
+    font-size: 13px; font-weight: 600; margin: 0 0 2px;
+    text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-2);
+  }
+  .card > .hint { font-size: 12px; color: var(--ink-muted); margin: 0 0 16px; }
+
+  /* Stat tiles */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px;
+           background: var(--hairline); border: 1px solid var(--hairline);
+           border-radius: 10px; overflow: hidden; margin-bottom: 20px; }
+  .tile { background: var(--surface-1); padding: 16px 18px; }
+  .tile .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+                 color: var(--ink-muted); margin-bottom: 6px; }
+  .tile .value { font-size: 24px; font-weight: 600; letter-spacing: -0.02em; }
+  .tile .unit { font-size: 12px; color: var(--ink-2); font-weight: 400; margin-left: 3px; }
+
+  /* Controls */
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    border: 1px solid var(--hairline); background: none; color: var(--ink-2);
+    border-radius: 999px; padding: 4px 11px 4px 8px; font: inherit; font-size: 12px;
+    cursor: pointer; user-select: none;
+  }
+  .chip:hover { border-color: var(--axis); color: var(--ink-1); }
+  .chip[aria-pressed="true"] { color: var(--ink-1); border-color: var(--axis); }
+  .chip .swatch { width: 10px; height: 10px; border-radius: 2px; background: var(--ink-muted); }
+  .chip[aria-pressed="false"] .swatch { background: var(--organ-empty); border: 1px solid var(--axis); }
+  .spacer { flex: 1 1 auto; }
+  .scale-toggle { display: inline-flex; border: 1px solid var(--hairline); border-radius: 6px; overflow: hidden; }
+  .scale-toggle button {
+    background: none; border: 0; color: var(--ink-muted); font: inherit; font-size: 12px;
+    padding: 4px 11px; cursor: pointer;
+  }
+  .scale-toggle button[aria-pressed="true"] { background: var(--plane); color: var(--ink-1); }
+
+  figure { margin: 0; }
+  svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .grid-line { stroke: var(--grid); stroke-width: 1; }
+  .axis-line { stroke: var(--axis); stroke-width: 1; }
+  .tick { fill: var(--ink-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .axis-title { fill: var(--ink-2); font-size: 11px; }
+  .series-path { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .series-label { font-size: 11px; font-weight: 500; dominant-baseline: middle; }
+  .crosshair { stroke: var(--axis); stroke-width: 1; stroke-dasharray: 3 3; }
+  .dose-marker { stroke: var(--ink-muted); stroke-width: 1; stroke-dasharray: 2 4; }
+  .dose-tag { fill: var(--ink-muted); font-size: 10px; }
+  .hover-dot { stroke: var(--surface-1); stroke-width: 2; }
+
+  .tooltip {
+    position: fixed; pointer-events: none; opacity: 0; transition: opacity 90ms;
+    background: var(--surface-1); border: 1px solid var(--hairline);
+    border-radius: 8px; padding: 9px 11px; font-size: 12px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.13); z-index: 20; min-width: 150px;
+  }
+  .tooltip .tt-time { color: var(--ink-muted); font-size: 11px; margin-bottom: 6px;
+                      font-variant-numeric: tabular-nums; }
+  .tooltip .tt-row { display: flex; align-items: center; gap: 7px; margin-top: 3px; }
+  .tooltip .tt-row .swatch { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+  .tooltip .tt-row .name { color: var(--ink-2); }
+  .tooltip .tt-row .val { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--ink-1); }
+
+  /* Anatomy */
+  .anatomy-layout { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+                    gap: 28px; align-items: start; }
+  .organ { stroke: var(--surface-1); stroke-width: 1.5; transition: fill 60ms linear; cursor: pointer; }
+  .organ.is-selected { stroke: var(--ink-1); stroke-width: 2; }
+  .body-outline { fill: none; stroke: var(--axis); stroke-width: 1.5; }
+  .organ-label { fill: var(--ink-2); font-size: 9.5px; pointer-events: none; }
+  .flow-arrow { stroke: var(--axis); stroke-width: 1; fill: none; opacity: 0.5; }
+
+  .scrub { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
+  .scrub input[type=range] { flex: 1; accent-color: var(--s1); }
+  .play {
+    width: 34px; height: 34px; flex: none; border-radius: 50%;
+    border: 1px solid var(--hairline); background: var(--plane); color: var(--ink-1);
+    font-size: 13px; cursor: pointer; display: grid; place-items: center;
+  }
+  .play:hover { border-color: var(--axis); }
+  .clock { font-variant-numeric: tabular-nums; color: var(--ink-2); font-size: 12px;
+           min-width: 72px; text-align: right; }
+
+  .ranking { border-collapse: collapse; width: 100%; font-size: 12px; }
+  .ranking th { text-align: left; font-weight: 500; color: var(--ink-muted); font-size: 11px;
+                text-transform: uppercase; letter-spacing: 0.05em; padding: 0 0 8px; }
+  .ranking td { padding: 5px 0; border-top: 1px solid var(--hairline); }
+  .ranking td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .ranking .bar-cell { width: 42%; }
+  .ranking .bar { height: 7px; border-radius: 0 3px 3px 0; }
+  .ranking tr.is-selected td { color: var(--ink-1); font-weight: 500; }
+
+  .colorbar { display: flex; align-items: center; gap: 9px; margin-top: 18px;
+              font-size: 11px; color: var(--ink-muted); }
+  .colorbar .ramp { flex: 1; height: 8px; border-radius: 2px;
+    background: linear-gradient(90deg, var(--q0), var(--q1), var(--q2), var(--q3), var(--q5), var(--q6)); }
+
+  /* Small multiples */
+  .multiples { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 18px; }
+  .multiple h3 { font-size: 12px; font-weight: 500; margin: 0 0 1px; }
+  .multiple .peak { font-size: 11px; color: var(--ink-muted); margin: 0 0 6px;
+                    font-variant-numeric: tabular-nums; }
+
+  /* Table view */
+  details.data-table { margin-top: 4px; }
+  details.data-table summary { cursor: pointer; color: var(--ink-2); font-size: 13px; }
+  .scroll { overflow: auto; max-height: 440px; margin-top: 14px; border: 1px solid var(--hairline);
+            border-radius: 8px; }
+  table.data { border-collapse: collapse; font-size: 12px; width: 100%; }
+  table.data th, table.data td { padding: 5px 11px; white-space: nowrap;
+                                 font-variant-numeric: tabular-nums; text-align: right; }
+  table.data th { position: sticky; top: 0; background: var(--surface-1); color: var(--ink-2);
+                  font-weight: 500; text-align: right; border-bottom: 1px solid var(--axis); }
+  table.data th:first-child, table.data td:first-child { text-align: left; }
+  table.data tbody tr:nth-child(even) { background: var(--plane); }
+
+  footer { color: var(--ink-muted); font-size: 12px; margin-top: 28px; line-height: 1.7; }
+  footer strong { color: var(--ink-2); font-weight: 600; }
+
+  @media (max-width: 760px) {
+    .anatomy-layout { grid-template-columns: 1fr; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .organ { transition: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1 id="title"></h1>
+  <span class="subject" id="subject"></span>
+  <button class="theme-toggle" id="theme-toggle" type="button">Dark</button>
+</header>
+<p class="regimen" id="regimen"></p>
+
+<div class="tiles" id="tiles"></div>
+
+<section class="card">
+  <h2>Concentration over time</h2>
+  <p class="hint" id="chart-hint"></p>
+  <div class="controls" id="series-controls"></div>
+  <div class="controls">
+    <div class="spacer"></div>
+    <div class="scale-toggle" role="group" aria-label="Vertical scale">
+      <button type="button" id="scale-linear" aria-pressed="false">Linear</button>
+      <button type="button" id="scale-log" aria-pressed="true">Log</button>
+    </div>
+  </div>
+  <figure>
+    <svg id="chart" viewBox="0 0 880 380" role="img" aria-labelledby="chart-desc"></svg>
+    <desc id="chart-desc"></desc>
+  </figure>
+</section>
+
+<section class="card">
+  <h2>Where the compound is</h2>
+  <p class="hint">Each organ is shaded by how concentrated the compound is in it. Drag the
+     scrubber to follow it through the circulation.</p>
+  <div class="anatomy-layout">
+    <div>
+      <figure>
+        <svg id="anatomy" viewBox="0 0 440 300" role="img" aria-labelledby="anatomy-desc"></svg>
+        <desc id="anatomy-desc">Schematic rat anatomy with organs shaded by compound
+          concentration at the selected time.</desc>
+      </figure>
+      <div class="scrub">
+        <button class="play" id="play" type="button" aria-label="Play">&#9654;</button>
+        <input type="range" id="scrubber" min="0" max="100" value="0" step="1"
+               aria-label="Time through the simulation">
+        <span class="clock" id="clock"></span>
+      </div>
+      <div class="colorbar">
+        <span id="cb-min">low</span><div class="ramp"></div><span id="cb-max"></span>
+      </div>
+      <p class="hint" style="margin-top:8px">Shading is logarithmic over the
+         concentration range, so lightly loaded organs stay legible beside the
+         most loaded one. Click an organ or a row to mark it.</p>
+    </div>
+    <table class="ranking" id="ranking">
+      <thead><tr><th>Tissue</th><th class="bar-cell"></th><th>mg/L</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Every tissue</h2>
+  <p class="hint">All tissues on a shared scale, so their relative exposure is directly
+     comparable. Peak concentration is noted under each name.</p>
+  <div class="multiples" id="multiples"></div>
+</section>
+
+<section class="card">
+  <details class="data-table">
+    <summary>Table view &mdash; every value plotted above</summary>
+    <div class="scroll" id="table-host"></div>
+  </details>
+</section>
+
+<footer id="footer"></footer>
+</div>
+
+<div class="tooltip" id="tooltip" role="status" aria-live="polite"></div>
+
+<script id="payload" type="application/json">__PAYLOAD__</script>
+<script>
+"use strict";
+
+const DATA = JSON.parse(document.getElementById("payload").textContent);
+const SERIES_SLOTS = ["--s1", "--s2", "--s3", "--s4", "--s5", "--s6"];
+const MAX_COLOURED = SERIES_SLOTS.length;
+const RAMP = ["--q0", "--q1", "--q2", "--q3", "--q4", "--q5", "--q6"];
+
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function el(tag, attrs, text) {
+  const node = document.createElementNS(SVG_NS, tag);
+  for (const key in attrs) node.setAttribute(key, attrs[key]);
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+// Tissue names reach the page as data and may be defined by whoever built the
+// model, so anything interpolated into markup is escaped rather than trusted.
+function esc(text) {
+  return String(text).replace(/[&<>"']/g, (ch) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[ch]);
+}
+
+function label(name) {
+  return DATA.labels[name] || name;
+}
+
+function fmt(value, digits) {
+  if (!isFinite(value)) return "—";
+  const abs = Math.abs(value);
+  if (value !== 0 && (abs < 1e-3 || abs >= 1e6)) return value.toExponential(2);
+  const d = digits !== undefined ? digits : (abs >= 100 ? 0 : abs >= 1 ? 2 : 4);
+  return value.toFixed(d);
+}
+
+/* ---------- state ---------- */
+
+const state = {
+  visible: new Set(DATA.defaultVisible),
+  logScale: true,
+  timeIndex: DATA.defaultTimeIndex || 0,
+  playing: false,
+  focusTissue: null,
+};
+
+const colourOf = (name) => {
+  const ordered = DATA.seriesOrder.filter((s) => state.visible.has(s));
+  const position = ordered.indexOf(name);
+  return position >= 0 && position < MAX_COLOURED ? css(SERIES_SLOTS[position]) : css("--ink-muted");
+};
+
+/* ---------- header, tiles, footer ---------- */
+
+document.getElementById("title").textContent = DATA.compound;
+document.getElementById("subject").textContent = DATA.subject;
+document.getElementById("regimen").textContent = DATA.regimen;
+document.getElementById("chart-hint").textContent =
+  "Plasma is what a blood sample measures. Pick tissues to overlay; at most " +
+  MAX_COLOURED + " carry a colour at once.";
+document.getElementById("footer").innerHTML = DATA.footer;
+document.title = DATA.compound + " — vivosim";
+
+const tiles = document.getElementById("tiles");
+for (const tile of DATA.tiles) {
+  const box = document.createElement("div");
+  box.className = "tile";
+  const label = document.createElement("div");
+  label.className = "label";
+  label.textContent = tile.label;
+  const value = document.createElement("div");
+  value.className = "value";
+  value.textContent = tile.value;
+  if (tile.unit) {
+    const unit = document.createElement("span");
+    unit.className = "unit";
+    unit.textContent = tile.unit;
+    value.appendChild(unit);
+  }
+  box.append(label, value);
+  tiles.appendChild(box);
+}
+
+/* ---------- series chips ---------- */
+
+const chips = new Map();
+const controls = document.getElementById("series-controls");
+for (const name of DATA.seriesOrder) {
+  const chip = document.createElement("button");
+  chip.type = "button";
+  chip.className = "chip";
+  chip.setAttribute("aria-pressed", String(state.visible.has(name)));
+  const swatch = document.createElement("span");
+  swatch.className = "swatch";
+  chip.append(swatch, document.createTextNode(label(name)));
+  chip.addEventListener("click", () => {
+    if (state.visible.has(name)) {
+      if (state.visible.size > 1) state.visible.delete(name);
+    } else {
+      if (state.visible.size >= MAX_COLOURED) {
+        // Keep identity reliable: colours are assigned in fixed slot order, so
+        // the oldest selection yields rather than the palette being cycled.
+        const ordered = DATA.seriesOrder.filter((s) => state.visible.has(s));
+        state.visible.delete(ordered[ordered.length - 1]);
+      }
+      state.visible.add(name);
+    }
+    refreshChips();
+    drawChart();
+  });
+  controls.appendChild(chip);
+  chips.set(name, { chip, swatch });
+}
+
+function refreshChips() {
+  for (const [name, parts] of chips) {
+    const on = state.visible.has(name);
+    parts.chip.setAttribute("aria-pressed", String(on));
+    parts.swatch.style.background = on ? colourOf(name) : "";
+  }
+}
+
+/* ---------- scale toggle ---------- */
+
+const linearBtn = document.getElementById("scale-linear");
+const logBtn = document.getElementById("scale-log");
+function setScale(useLog) {
+  state.logScale = useLog;
+  linearBtn.setAttribute("aria-pressed", String(!useLog));
+  logBtn.setAttribute("aria-pressed", String(useLog));
+  drawChart();
+}
+linearBtn.addEventListener("click", () => setScale(false));
+logBtn.addEventListener("click", () => setScale(true));
+
+/* ---------- main chart ---------- */
+
+const chart = document.getElementById("chart");
+const tooltip = document.getElementById("tooltip");
+const PLOT = { left: 62, right: 118, top: 14, bottom: 46, width: 880, height: 380 };
+const inner = {
+  w: PLOT.width - PLOT.left - PLOT.right,
+  h: PLOT.height - PLOT.top - PLOT.bottom,
+};
+const LOG_FLOOR_DECADES = 4;
+
+function visibleSeries() {
+  return DATA.seriesOrder.filter((name) => state.visible.has(name));
+}
+
+function yDomain(names) {
+  let max = 0;
+  let minPositive = Infinity;
+  for (const name of names) {
+    for (const value of DATA.series[name]) {
+      if (value > max) max = value;
+      if (value > 0 && value < minPositive) minPositive = value;
+    }
+  }
+  if (max <= 0) return { lo: 0, hi: 1 };
+  if (!state.logScale) return { lo: 0, hi: max * 1.06 };
+  // Headroom just above the peak rather than a jump to the next decade, which
+  // would leave most of a nearly empty decade on screen. Ticks stay on
+  // decades regardless, so the axis still reads in round numbers.
+  const hi = max * 1.18;
+  const floor = hi / Math.pow(10, LOG_FLOOR_DECADES);
+  const lo = Math.pow(10, Math.floor(Math.log10(Math.max(minPositive, floor))));
+  return { lo, hi };
+}
+
+function makeScales(names) {
+  const { lo, hi } = yDomain(names);
+  const tMax = DATA.time[DATA.time.length - 1] || 1;
+  const x = (t) => PLOT.left + (t / tMax) * inner.w;
+  const y = state.logScale
+    ? (v) => {
+        const clamped = Math.max(v, lo);
+        const span = Math.log10(hi) - Math.log10(lo);
+        return PLOT.top + inner.h * (1 - (Math.log10(clamped) - Math.log10(lo)) / span);
+      }
+    : (v) => PLOT.top + inner.h * (1 - (v - lo) / (hi - lo));
+  return { x, y, lo, hi, tMax };
+}
+
+function niceStep(rough) {
+  // Round a rough tick interval up to 1, 2, 2.5 or 5 times a power of ten, so
+  // the axis reads in round numbers rather than in fractions of the maximum.
+  const magnitude = Math.pow(10, Math.floor(Math.log10(rough)));
+  const normalised = rough / magnitude;
+  const snapped = normalised <= 1 ? 1 : normalised <= 2 ? 2
+                : normalised <= 2.5 ? 2.5 : normalised <= 5 ? 5 : 10;
+  return snapped * magnitude;
+}
+
+function yTicks(lo, hi) {
+  if (state.logScale) {
+    const ticks = [];
+    for (let e = Math.log10(lo); e <= Math.log10(hi) + 1e-9; e += 1) {
+      ticks.push(Math.pow(10, Math.round(e)));
+    }
+    return ticks;
+  }
+  if (!(hi > lo)) return [lo];
+  const step = niceStep((hi - lo) / 5);
+  const ticks = [];
+  for (let v = Math.ceil(lo / step) * step; v <= hi + step * 1e-6; v += step) {
+    ticks.push(Math.abs(v) < step * 1e-6 ? 0 : v);
+  }
+  return ticks;
+}
+
+function xTicks(tMax) {
+  const candidates = [0.5, 1, 2, 3, 6, 12, 24, 48, 96, 168];
+  const target = candidates.find((c) => tMax / c <= 8) || tMax / 8;
+  const ticks = [];
+  for (let t = 0; t <= tMax + 1e-9; t += target) ticks.push(t);
+  return ticks;
+}
+
+function drawChart() {
+  const names = visibleSeries();
+  chart.textContent = "";
+  const { x, y, lo, hi, tMax } = makeScales(names);
+
+  document.getElementById("chart-desc").textContent =
+    "Concentration against time for " + names.map((n) => label(n)).join(", ") +
+    ", on a " + (state.logScale ? "logarithmic" : "linear") + " vertical scale.";
+
+  const grid = el("g", {});
+  for (const value of yTicks(lo, hi)) {
+    const yy = y(value);
+    if (yy < PLOT.top - 1 || yy > PLOT.top + inner.h + 1) continue;
+    grid.appendChild(el("line", {
+      class: "grid-line", x1: PLOT.left, x2: PLOT.left + inner.w, y1: yy, y2: yy,
+    }));
+    grid.appendChild(el("text", {
+      class: "tick", x: PLOT.left - 9, y: yy + 3.5, "text-anchor": "end",
+    }, state.logScale ? exponentLabel(value) : fmt(value)));
+  }
+  chart.appendChild(grid);
+
+  const axes = el("g", {});
+  axes.appendChild(el("line", {
+    class: "axis-line", x1: PLOT.left, x2: PLOT.left + inner.w,
+    y1: PLOT.top + inner.h, y2: PLOT.top + inner.h,
+  }));
+  for (const t of xTicks(tMax)) {
+    const xx = x(t);
+    axes.appendChild(el("line", {
+      class: "axis-line", x1: xx, x2: xx,
+      y1: PLOT.top + inner.h, y2: PLOT.top + inner.h + 5,
+    }));
+    axes.appendChild(el("text", {
+      class: "tick", x: xx, y: PLOT.top + inner.h + 19, "text-anchor": "middle",
+    }, fmt(t, t % 1 === 0 ? 0 : 1)));
+  }
+  axes.appendChild(el("text", {
+    class: "axis-title", x: PLOT.left + inner.w / 2, y: PLOT.top + inner.h + 38,
+    "text-anchor": "middle",
+  }, "Time (hours)"));
+  axes.appendChild(el("text", {
+    class: "axis-title", x: PLOT.left - 46, y: PLOT.top + inner.h / 2,
+    "text-anchor": "middle",
+    transform: "rotate(-90 " + (PLOT.left - 46) + " " + (PLOT.top + inner.h / 2) + ")",
+  }, "Concentration (mg/L)"));
+  chart.appendChild(axes);
+
+  // Dosing events, so a peak can be read against what caused it.
+  const doses = el("g", {});
+  for (const event of DATA.doseEvents) {
+    if (event.time > tMax) continue;
+    const xx = x(event.time);
+    doses.appendChild(el("line", {
+      class: "dose-marker", x1: xx, x2: xx, y1: PLOT.top, y2: PLOT.top + inner.h,
+    }));
+    doses.appendChild(el("text", {
+      class: "dose-tag", x: xx + 3, y: PLOT.top + 9,
+    }, event.label));
+  }
+  chart.appendChild(doses);
+
+  const lines = el("g", {});
+  for (const name of names) {
+    const values = DATA.series[name];
+    let path = "";
+    let open = false;
+    for (let i = 0; i < values.length; i += 1) {
+      if (state.logScale && values[i] <= 0) { open = false; continue; }
+      path += (open ? "L" : "M") + x(DATA.time[i]).toFixed(2) + " " + y(values[i]).toFixed(2) + " ";
+      open = true;
+    }
+    lines.appendChild(el("path", { class: "series-path", d: path.trim(), stroke: colourOf(name) }));
+  }
+  chart.appendChild(lines);
+
+  // Direct labels at the right-hand end: identity never rests on colour alone,
+  // which also discharges the light-mode contrast relief rule.
+  // Direct labels at the right-hand end. Curves that finish close together
+  // would overprint, so the labels are spread apart after placement: pushed
+  // down in order, then lifted back inside the plot from the bottom up.
+  const MIN_GAP = 14;
+  const anchors = names.map((name) => {
+    const values = DATA.series[name];
+    let last = values.length - 1;
+    while (last > 0 && state.logScale && values[last] <= 0) last -= 1;
+    return { name, y: y(values[last]) };
+  }).sort((a, b) => a.y - b.y);
+
+  for (let i = 1; i < anchors.length; i += 1) {
+    anchors[i].y = Math.max(anchors[i].y, anchors[i - 1].y + MIN_GAP);
+  }
+  const bottom = PLOT.top + inner.h;
+  if (anchors.length && anchors[anchors.length - 1].y > bottom) {
+    anchors[anchors.length - 1].y = bottom;
+    for (let i = anchors.length - 2; i >= 0; i -= 1) {
+      anchors[i].y = Math.min(anchors[i].y, anchors[i + 1].y - MIN_GAP);
+    }
+  }
+
+  const labels = el("g", {});
+  for (const anchor of anchors) {
+    labels.appendChild(el("text", {
+      class: "series-label", x: PLOT.left + inner.w + 9, y: anchor.y,
+      fill: colourOf(anchor.name),
+    }, label(anchor.name)));
+  }
+  chart.appendChild(labels);
+
+  const hover = el("g", { id: "hover-layer" });
+  chart.appendChild(hover);
+
+  const capture = el("rect", {
+    x: PLOT.left, y: PLOT.top, width: inner.w, height: inner.h,
+    fill: "transparent", style: "cursor: crosshair",
+  });
+  capture.addEventListener("pointermove", (event) => showHover(event, names, x, y, tMax));
+  capture.addEventListener("pointerleave", hideHover);
+  chart.appendChild(capture);
+}
+
+function exponentLabel(value) {
+  const e = Math.round(Math.log10(value));
+  if (e >= -2 && e <= 3) return fmt(value, Math.max(0, -e));
+  return "1e" + e;
+}
+
+function nearestIndex(t) {
+  const times = DATA.time;
+  let lo = 0;
+  let hi = times.length - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (times[mid] < t) lo = mid; else hi = mid;
+  }
+  return Math.abs(times[lo] - t) <= Math.abs(times[hi] - t) ? lo : hi;
+}
+
+function showHover(event, names, x, y, tMax) {
+  const box = chart.getBoundingClientRect();
+  const fraction = (event.clientX - box.left) / box.width;
+  const t = Math.max(0, Math.min(tMax, ((fraction * PLOT.width) - PLOT.left) / inner.w * tMax));
+  const index = nearestIndex(t);
+
+  const layer = document.getElementById("hover-layer");
+  layer.textContent = "";
+  const xx = x(DATA.time[index]);
+  layer.appendChild(el("line", {
+    class: "crosshair", x1: xx, x2: xx, y1: PLOT.top, y2: PLOT.top + inner.h,
+  }));
+
+  let rows = '<div class="tt-time">t = ' + fmt(DATA.time[index], 2) + " h</div>";
+  for (const name of names) {
+    const value = DATA.series[name][index];
+    const colour = colourOf(name);
+    if (!state.logScale || value > 0) {
+      layer.appendChild(el("circle", {
+        class: "hover-dot", cx: xx, cy: y(value), r: 4.5, fill: colour,
+      }));
+    }
+    rows += '<div class="tt-row"><span class="swatch" style="background:' + esc(colour) + '"></span>' +
+            '<span class="name">' + esc(label(name)) + "</span>" +
+            '<span class="val">' + esc(fmt(value)) + "</span></div>";
+  }
+  tooltip.innerHTML = rows;
+  tooltip.style.opacity = "1";
+  const width = tooltip.offsetWidth;
+  tooltip.style.left = Math.min(event.clientX + 14, window.innerWidth - width - 10) + "px";
+  tooltip.style.top = Math.max(10, event.clientY - tooltip.offsetHeight / 2) + "px";
+}
+
+function hideHover() {
+  tooltip.style.opacity = "0";
+  const layer = document.getElementById("hover-layer");
+  if (layer) layer.textContent = "";
+}
+
+/* ---------- anatomy ---------- */
+
+const anatomy = document.getElementById("anatomy");
+const organNodes = new Map();
+
+function buildAnatomy() {
+  anatomy.textContent = "";
+
+  const outline = el("g", {});
+  // Schematic rat: body capsule, head, tail and limbs. Deliberately diagrammatic
+  // rather than illustrative -- it is a readout, not a picture of an animal.
+  outline.appendChild(el("path", {
+    class: "body-outline",
+    d: "M118 96 C118 70 146 56 196 56 L300 56 C342 56 362 74 362 100 " +
+       "C362 128 342 148 300 148 L196 148 C146 148 118 132 118 106 Z",
+  }));
+  outline.appendChild(el("circle", { class: "body-outline", cx: 86, cy: 96, r: 29 }));
+  outline.appendChild(el("path", { class: "body-outline", d: "M64 84 L46 70 M64 108 L46 122" }));
+  outline.appendChild(el("path", {
+    class: "body-outline", d: "M362 112 C392 124 408 152 400 180",
+  }));
+  outline.appendChild(el("path", {
+    class: "body-outline",
+    d: "M168 148 L158 196 M212 148 L206 196 M312 148 L322 196 M344 146 L356 194",
+  }));
+  anatomy.appendChild(outline);
+
+  const organs = el("g", {});
+  for (const organ of DATA.anatomy) {
+    let shape;
+    if (organ.shape === "circle") {
+      shape = el("circle", { class: "organ", cx: organ.cx, cy: organ.cy, r: organ.r });
+    } else if (organ.shape === "rect") {
+      shape = el("rect", {
+        class: "organ", x: organ.x, y: organ.y, width: organ.w, height: organ.h, rx: 4,
+      });
+    } else {
+      shape = el("ellipse", { class: "organ", cx: organ.cx, cy: organ.cy, rx: organ.rx, ry: organ.ry });
+    }
+    shape.setAttribute("fill", css("--organ-empty"));
+    shape.addEventListener("click", () => focusTissue(organ.tissue));
+    shape.appendChild(el("title", {}, label(organ.tissue)));
+    organs.appendChild(shape);
+    organNodes.set(organ.tissue, shape);
+
+    if (organ.labelX !== undefined) {
+      organs.appendChild(el("text", {
+        class: "organ-label", x: organ.labelX, y: organ.labelY,
+        "text-anchor": organ.labelAnchor || "middle",
+      }, label(organ.tissue)));
+    }
+  }
+  anatomy.appendChild(organs);
+}
+
+function focusTissue(tissue) {
+  state.focusTissue = state.focusTissue === tissue ? null : tissue;
+  paintAnatomy();
+}
+
+function rampColour(value) {
+  // Tissue concentrations span orders of magnitude, so the ramp is logarithmic:
+  // a linear mapping would leave every organ but the most loaded one blank.
+  const max = DATA.anatomyMax || 1;
+  const floor = max / Math.pow(10, DATA.anatomyDecades);
+  if (!(value > floor)) return css("--organ-empty");
+  const fraction = (Math.log10(value) - Math.log10(floor)) /
+                   (Math.log10(max) - Math.log10(floor));
+  const index = Math.min(RAMP.length - 1, Math.max(0, Math.floor(fraction * RAMP.length)));
+  return css(RAMP[index]);
+}
+
+function paintAnatomy() {
+  const index = state.timeIndex;
+  const scale = DATA.anatomyMax || 1;
+
+  for (const [tissue, node] of organNodes) {
+    const values = DATA.series[tissue];
+    const value = values ? values[index] : 0;
+    node.setAttribute("fill", rampColour(value));
+    node.classList.toggle("is-selected", state.focusTissue === tissue);
+  }
+
+  document.getElementById("clock").textContent = fmt(DATA.time[index], 2) + " h";
+  document.getElementById("cb-max").textContent = fmt(scale) + " mg/L";
+
+  const rows = DATA.anatomy
+    .map((organ) => ({
+      tissue: organ.tissue,
+      value: DATA.series[organ.tissue] ? DATA.series[organ.tissue][index] : 0,
+    }))
+    .sort((a, b) => b.value - a.value);
+
+  const body = document.querySelector("#ranking tbody");
+  body.textContent = "";
+  for (const row of rows) {
+    const tr = document.createElement("tr");
+    if (state.focusTissue === row.tissue) tr.className = "is-selected";
+    tr.style.cursor = "pointer";
+    tr.addEventListener("click", () => focusTissue(row.tissue));
+    const name = document.createElement("td");
+    name.textContent = label(row.tissue);
+    const barCell = document.createElement("td");
+    barCell.className = "bar-cell";
+    const bar = document.createElement("div");
+    bar.className = "bar";
+    bar.style.width = Math.max(1, (row.value / scale) * 100) + "%";
+    bar.style.background = rampColour(row.value);
+    barCell.appendChild(bar);
+    const value = document.createElement("td");
+    value.className = "num";
+    value.textContent = fmt(row.value);
+    tr.append(name, barCell, value);
+    body.appendChild(tr);
+  }
+}
+
+const scrubber = document.getElementById("scrubber");
+scrubber.max = String(DATA.time.length - 1);
+scrubber.value = String(state.timeIndex);
+scrubber.addEventListener("input", () => {
+  state.timeIndex = Number(scrubber.value);
+  stopPlaying();
+  paintAnatomy();
+});
+
+const playButton = document.getElementById("play");
+let timer = null;
+
+function stopPlaying() {
+  state.playing = false;
+  playButton.innerHTML = "&#9654;";
+  playButton.setAttribute("aria-label", "Play");
+  if (timer !== null) { clearInterval(timer); timer = null; }
+}
+
+playButton.addEventListener("click", () => {
+  if (state.playing) { stopPlaying(); return; }
+  state.playing = true;
+  playButton.innerHTML = "&#10073;&#10073;";
+  playButton.setAttribute("aria-label", "Pause");
+  if (state.timeIndex >= DATA.time.length - 1) state.timeIndex = 0;
+  timer = setInterval(() => {
+    state.timeIndex += 1;
+    if (state.timeIndex >= DATA.time.length - 1) {
+      state.timeIndex = DATA.time.length - 1;
+      scrubber.value = String(state.timeIndex);
+      paintAnatomy();
+      stopPlaying();
+      return;
+    }
+    scrubber.value = String(state.timeIndex);
+    paintAnatomy();
+  }, 40);
+});
+
+/* ---------- small multiples ---------- */
+
+function buildMultiples() {
+  const host = document.getElementById("multiples");
+  host.textContent = "";
+  const scale = DATA.multiplesMax || 1;
+  const W = 168;
+  const H = 76;
+  const tMax = DATA.time[DATA.time.length - 1] || 1;
+
+  for (const tissue of DATA.tissueOrder) {
+    const values = DATA.series[tissue];
+    if (!values) continue;
+
+    const panel = document.createElement("div");
+    panel.className = "multiple";
+    const heading = document.createElement("h3");
+    heading.textContent = label(tissue);
+    const peak = document.createElement("p");
+    peak.className = "peak";
+    peak.textContent = "peak " + fmt(Math.max(...values)) + " mg/L";
+    panel.append(heading, peak);
+
+    const svg = document.createElementNS(SVG_NS, "svg");
+    svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label",
+      label(tissue) + " concentration over time, peaking at " +
+      fmt(Math.max(...values)) + " milligrams per litre");
+
+    svg.appendChild(el("line", {
+      class: "axis-line", x1: 0, x2: W, y1: H - 1, y2: H - 1,
+    }));
+
+    let area = "M0 " + (H - 1);
+    let line = "";
+    for (let i = 0; i < values.length; i += 1) {
+      const px = (DATA.time[i] / tMax) * W;
+      const py = (H - 1) - Math.min(1, values[i] / scale) * (H - 6);
+      area += " L" + px.toFixed(1) + " " + py.toFixed(1);
+      line += (i === 0 ? "M" : "L") + px.toFixed(1) + " " + py.toFixed(1) + " ";
+    }
+    area += " L" + W + " " + (H - 1) + " Z";
+
+    svg.appendChild(el("path", { d: area, fill: css("--q1"), opacity: "0.5" }));
+    svg.appendChild(el("path", { class: "series-path", d: line.trim(), stroke: css("--s1") }));
+    panel.appendChild(svg);
+    host.appendChild(panel);
+  }
+}
+
+/* ---------- table view ---------- */
+
+function buildTable() {
+  const host = document.getElementById("table-host");
+  const columns = DATA.seriesOrder;
+  let html = "<table class='data'><thead><tr><th>t (h)</th>";
+  for (const name of columns) html += "<th>" + esc(label(name)) + "</th>";
+  html += "</tr></thead><tbody>";
+  const stride = Math.max(1, Math.ceil(DATA.time.length / 400));
+  for (let i = 0; i < DATA.time.length; i += stride) {
+    html += "<tr><td>" + fmt(DATA.time[i], 2) + "</td>";
+    for (const name of columns) html += "<td>" + fmt(DATA.series[name][i]) + "</td>";
+    html += "</tr>";
+  }
+  host.innerHTML = html + "</tbody></table>";
+}
+
+/* ---------- theme ---------- */
+
+const themeButton = document.getElementById("theme-toggle");
+function applyTheme(mode) {
+  document.documentElement.setAttribute("data-theme", mode);
+  themeButton.textContent = mode === "dark" ? "Light" : "Dark";
+  refreshChips();
+  drawChart();
+  buildMultiples();
+  paintAnatomy();
+}
+themeButton.addEventListener("click", () => {
+  const current = document.documentElement.getAttribute("data-theme");
+  const resolved = current || (window.matchMedia("(prefers-color-scheme: dark)").matches
+    ? "dark" : "light");
+  applyTheme(resolved === "dark" ? "light" : "dark");
+});
+
+/* ---------- go ---------- */
+
+refreshChips();
+drawChart();
+buildAnatomy();
+paintAnatomy();
+buildMultiples();
+buildTable();
+
+const prefersDark = window.matchMedia("(prefers-color-scheme: dark)");
+themeButton.textContent = prefersDark.matches ? "Light" : "Dark";
+prefersDark.addEventListener("change", () => {
+  if (!document.documentElement.getAttribute("data-theme")) {
+    refreshChips(); drawChart(); buildMultiples(); paintAnatomy();
+  }
+});
+</script>
+</body>
+</html>

@@ -25,7 +25,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7.4", "ruff>=0.5"]
+# Reading molecular structures (SMILES -> logP, descriptors).
+chem = ["rdkit>=2023.9"]
+# Opening the viewer in a native window instead of a browser tab.
+app = ["pywebview>=4.4"]
+dev = ["pytest>=7.4", "ruff>=0.5", "rdkit>=2023.9"]
 
 [project.urls]
 Homepage = "https://github.com/gusah9559/vivosim"

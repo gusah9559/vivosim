@@ -136,6 +136,45 @@ from vivosim import volume_of_distribution_L_per_kg
 volume_of_distribution_L_per_kg(compound, get_physiology("rat"))
 ```
 
+## Viewer
+
+```python
+from vivosim.viewer import render_html, show
+
+render_html(result, "profile.html")   # a file you can mail, attach or commit
+show(result)                          # opens it, natively if pywebview is installed
+```
+
+`render_html` writes **one self-contained HTML file**. The data is embedded in
+it and nothing is fetched from a network, so it opens on any machine, works
+offline, and can be sent to someone who has never installed vivosim. For a
+scientific tool that matters more than a prettier window: a result that only
+exists inside a running session is a result nobody else can check.
+
+`show` opens that same file in a native window when
+[`pywebview`](https://pywebview.flowrl.com/) is installed (`pip install
+"vivosim[app]"`), so it behaves like a desktop application — one implementation,
+two ways to open it.
+
+The page carries:
+
+- **Headline metrics** — peak plasma, time of peak, AUC, Vss, fraction
+  eliminated, and the mass balance error, so a bad integration is visible rather
+  than hidden.
+- **Concentration over time**, log by default as PK convention expects, with a
+  crosshair readout, selectable tissues and dose markers.
+- **An anatomical view** where each organ is shaded by its concentration, with a
+  time scrubber. Watching a dose cross the lung, load the liver and leave again
+  tells you more about a compound in five seconds than a table does in five
+  minutes. Shading is logarithmic so lightly loaded organs stay legible beside
+  the most loaded one.
+- **Small multiples** of every tissue on a shared scale.
+- **A table view** of every plotted value, so nothing is visible only as colour.
+
+Charts are drawn as inline SVG with no plotting library, which is what keeps the
+file self-contained. Light and dark are both designed rather than inverted, and
+the categorical palette is validated for colour-vision deficiency.
+
 ## Model structure
 
 Blood leaves the venous pool, crosses the lung, and becomes arterial blood that
