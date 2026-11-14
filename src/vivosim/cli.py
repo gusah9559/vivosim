@@ -12,6 +12,7 @@ boilerplate when all you want is to change a dose and look at the result.
     vivosim new study.toml       write a commented starter file
     vivosim run study.toml       simulate and render
     vivosim validate             check the model against published data
+    vivosim serve                open a browser console to pick and run
 """
 
 from __future__ import annotations
@@ -383,6 +384,13 @@ def _cmd_conditions(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_serve(args: argparse.Namespace) -> int:
+    from .server import serve as run_server
+
+    run_server(port=args.port, open_browser=not args.no_open)
+    return 0
+
+
 def _cmd_validate(args: argparse.Namespace) -> int:
     examples = Path(__file__).parent.parent.parent / "examples"
     script = examples / "validate_theophylline.py"
@@ -426,6 +434,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     conditions = subparsers.add_parser("conditions", help="list the disease states")
     conditions.set_defaults(func=_cmd_conditions)
+
+    serve = subparsers.add_parser(
+        "serve", help="open a browser console to pick compounds and run them"
+    )
+    serve.add_argument("-p", "--port", type=int, default=8765)
+    serve.add_argument(
+        "--no-open", action="store_true", help="do not open a browser"
+    )
+    serve.set_defaults(func=_cmd_serve)
 
     validate = subparsers.add_parser(
         "validate", help="check the model against published data"

@@ -1,0 +1,526 @@
+<!doctype html>
+<html lang="en" data-skin="hud">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>vivosim console</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --void: #04070b;
+    --panel: #0a1119;
+    --panel-2: #0d1722;
+    --line: rgba(74, 200, 240, 0.20);
+    --line-bright: rgba(74, 200, 240, 0.42);
+    --accent: #3ad6f7;
+    --accent-dim: #1d7f98;
+    --ink: #e2f4fc;
+    --ink-2: #8fb4c8;
+    --ink-muted: #567c92;
+    --warn: #ec835a;
+    --bad: #d03b3b;
+    --good: #0ca30c;
+    --s1: #3987e5; --s2: #d95926;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--void);
+    color: var(--ink);
+    font: 13px/1.55 ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  /* A slow grid drifting behind everything, and a faint vignette, so the
+     surface reads as depth rather than as flat black. */
+  body::before {
+    content: ""; position: fixed; inset: -50%; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(var(--line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size: 46px 46px;
+    opacity: 0.55;
+    animation: drift 44s linear infinite;
+  }
+  body::after {
+    content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background: radial-gradient(1200px 760px at 50% -10%, rgba(24, 92, 122, 0.30), transparent 72%);
+  }
+  @keyframes drift { to { transform: translate3d(46px, 46px, 0); } }
+
+  .shell { position: relative; z-index: 1; max-width: 1540px; margin: 0 auto; padding: 22px 20px 60px; }
+
+  header { display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap; margin-bottom: 20px; }
+  h1 {
+    margin: 0; font-size: 21px; font-weight: 600;
+    letter-spacing: 0.34em; text-transform: uppercase;
+    color: var(--accent);
+    text-shadow: 0 0 26px rgba(58, 214, 247, 0.55);
+  }
+  .tagline { color: var(--ink-muted); font-size: 12px; letter-spacing: 0.06em; }
+  .status {
+    margin-left: auto; display: flex; align-items: center; gap: 9px;
+    font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-2);
+  }
+  .led {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent); box-shadow: 0 0 12px var(--accent);
+  }
+  .led[data-state="busy"] { background: var(--warn); box-shadow: 0 0 12px var(--warn);
+                            animation: pulse 0.7s ease-in-out infinite; }
+  .led[data-state="error"] { background: var(--bad); box-shadow: 0 0 12px var(--bad); }
+  @keyframes pulse { 50% { opacity: 0.25; } }
+
+  .layout { display: grid; grid-template-columns: 372px minmax(0, 1fr); gap: 20px; align-items: start; }
+  /* The rail begins below the header, so its budget is the viewport less the
+     header and the page padding -- not the whole viewport, which would push
+     Run off the bottom before anything is scrolled. */
+  .rail { position: sticky; top: 16px; max-height: calc(100vh - 118px);
+          display: flex; flex-direction: column; }
+  /* flex: 1 with min-height: 0 is what actually lets this shrink below its
+     content and scroll; without the min-height the rail just grows and pushes
+     Run off the bottom of the screen. */
+  .rail-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: 2px; }
+  .rail-scroll::-webkit-scrollbar { width: 8px; }
+  .rail-scroll::-webkit-scrollbar-thumb { background: var(--line-bright); }
+  .rail-foot { flex: 0 0 auto; padding-top: 12px; }
+
+  /* Panels get corner brackets rather than a plain border. */
+  .panel { position: relative; background: linear-gradient(170deg, var(--panel-2), var(--panel));
+           border: 1px solid var(--line); padding: 14px 16px; margin-bottom: 12px; }
+  .panel::before, .panel::after {
+    content: ""; position: absolute; width: 15px; height: 15px;
+    border: 1px solid var(--accent); opacity: 0.85; pointer-events: none;
+  }
+  .panel::before { top: -1px; left: -1px; border-right: 0; border-bottom: 0; }
+  .panel::after { bottom: -1px; right: -1px; border-left: 0; border-top: 0; }
+
+  .panel h2 {
+    margin: 0 0 11px; font-size: 10.5px; font-weight: 600;
+    letter-spacing: 0.26em; text-transform: uppercase; color: var(--accent);
+  }
+  .panel h2 span { color: var(--ink-muted); letter-spacing: 0.1em; margin-left: 8px; }
+
+  label { display: block; font-size: 10.5px; letter-spacing: 0.14em;
+          text-transform: uppercase; color: var(--ink-muted); margin: 11px 0 5px; }
+  label:first-of-type { margin-top: 0; }
+
+  select, input[type=number] {
+    width: 100%; background: #060c12; color: var(--ink);
+    border: 1px solid var(--line); padding: 8px 10px; font: inherit; border-radius: 0;
+  }
+  select:focus, input:focus { outline: none; border-color: var(--accent);
+                              box-shadow: 0 0 0 1px var(--accent), 0 0 18px rgba(58,214,247,0.22); }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+  /* Compound cards */
+  .picker { display: grid; gap: 6px; max-height: 246px; overflow-y: auto; padding-right: 4px; }
+  .picker::-webkit-scrollbar { width: 8px; }
+  .picker::-webkit-scrollbar-thumb { background: var(--line-bright); }
+  .pick {
+    position: relative; text-align: left; cursor: pointer;
+    background: #070e15; border: 1px solid var(--line); color: var(--ink-2);
+    padding: 10px 12px 10px 34px; font: inherit; transition: border-color 120ms, color 120ms;
+  }
+  .pick:hover { border-color: var(--line-bright); color: var(--ink); }
+  .pick .name { display: block; font-size: 12.5px; letter-spacing: 0.04em; }
+  .pick .note { display: none; font-size: 11px; color: var(--ink-muted); margin-top: 3px; line-height: 1.45; }
+  .pick[aria-pressed="true"] .note { display: block; }
+  .pick::before {
+    content: ""; position: absolute; left: 12px; top: 13px;
+    width: 11px; height: 11px; border: 1px solid var(--line-bright);
+  }
+  .pick[aria-pressed="true"] {
+    border-color: var(--accent); color: var(--ink);
+    box-shadow: inset 0 0 26px rgba(29, 127, 152, 0.26), 0 0 16px rgba(58,214,247,0.12);
+  }
+  .pick[aria-pressed="true"]::before { background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+  .pick .tag {
+    position: absolute; right: 10px; top: 9px; font-size: 9px; letter-spacing: 0.14em;
+    color: var(--good); border: 1px solid currentColor; padding: 0 5px;
+  }
+
+  .selected-note { font-size: 11px; color: var(--ink-muted); margin-top: 10px; min-height: 2.6em; }
+
+  /* The run button */
+  .run {
+    width: 100%; margin-top: 4px; padding: 15px; cursor: pointer;
+    background: linear-gradient(180deg, rgba(58,214,247,0.20), rgba(29,127,152,0.12));
+    border: 1px solid var(--accent); color: var(--accent);
+    font: inherit; font-size: 13px; font-weight: 600;
+    letter-spacing: 0.30em; text-transform: uppercase;
+    text-shadow: 0 0 14px rgba(58,214,247,0.6);
+    transition: background 140ms, box-shadow 140ms;
+  }
+  .run:hover:not(:disabled) {
+    background: linear-gradient(180deg, rgba(58,214,247,0.34), rgba(29,127,152,0.2));
+    box-shadow: 0 0 34px rgba(58, 214, 247, 0.34);
+  }
+  .run:disabled { opacity: 0.45; cursor: progress; }
+
+  .error { margin-top: 12px; border-left: 2px solid var(--bad); padding: 8px 11px;
+           background: rgba(208, 59, 59, 0.1); color: #f0b4b4; font-size: 11.5px; }
+  .error:empty { display: none; }
+
+  /* Readouts */
+  .readout { display: grid; grid-template-columns: repeat(auto-fit, minmax(146px, 1fr)); gap: 1px;
+             background: var(--line); border: 1px solid var(--line); margin-bottom: 16px; }
+  .cell { background: var(--panel); padding: 14px 16px; }
+  .cell .k { font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-muted); }
+  .cell .v { font-size: 25px; margin-top: 5px; letter-spacing: -0.01em;
+             text-shadow: 0 0 20px rgba(58,214,247,0.3); font-variant-numeric: tabular-nums; }
+  .cell .u { font-size: 11px; color: var(--ink-2); margin-left: 4px; }
+
+  .frame-wrap { position: relative; border: 1px solid var(--line); background: var(--panel); min-height: 640px; }
+  .frame-wrap::before, .frame-wrap::after {
+    content: ""; position: absolute; width: 15px; height: 15px;
+    border: 1px solid var(--accent); opacity: 0.85; pointer-events: none; z-index: 2;
+  }
+  .frame-wrap::before { top: -1px; left: -1px; border-right: 0; border-bottom: 0; }
+  .frame-wrap::after { bottom: -1px; right: -1px; border-left: 0; border-top: 0; }
+  iframe { display: block; width: 100%; height: 1180px; border: 0; background: transparent; }
+
+  .empty { display: grid; place-items: center; min-height: 640px; text-align: center;
+           color: var(--ink-muted); padding: 40px; }
+  .empty .big { font-size: 13px; letter-spacing: 0.3em; text-transform: uppercase;
+                color: var(--ink-2); margin-bottom: 12px; }
+  .empty p { max-width: 460px; line-height: 1.7; font-size: 12px; }
+
+  .scan { position: absolute; inset: 0; pointer-events: none; z-index: 1; overflow: hidden; }
+  .scan::after {
+    content: ""; position: absolute; left: 0; right: 0; height: 160px;
+    background: linear-gradient(180deg, transparent, rgba(58,214,247,0.07), transparent);
+    animation: sweep 2.4s linear infinite;
+  }
+  @keyframes sweep { from { top: -160px; } to { top: 100%; } }
+  .frame-wrap:not([data-busy="true"]) .scan { display: none; }
+
+  footer { margin-top: 22px; color: var(--ink-muted); font-size: 11px; line-height: 1.8; }
+  footer strong { color: var(--ink-2); }
+
+  @media (max-width: 1080px) {
+    .layout { grid-template-columns: 1fr; }
+    .rail { position: static; max-height: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    body::before, .scan::after, .led { animation: none; }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <header>
+    <h1>vivosim</h1>
+    <span class="tagline">in silico pharmacokinetics &mdash; local console</span>
+    <div class="status"><span class="led" id="led" data-state="idle"></span>
+      <span id="status-text">ready</span></div>
+  </header>
+
+  <div class="layout">
+    <div class="rail">
+      <div class="rail-scroll">
+      <section class="panel">
+        <h2>Subject</h2>
+        <label for="species">Species</label>
+        <select id="species"></select>
+        <div class="row">
+          <div>
+            <label for="weight">Body weight</label>
+            <input type="number" id="weight" step="0.01" min="0.001">
+          </div>
+          <div>
+            <label for="duration">Duration (h)</label>
+            <input type="number" id="duration" value="48" step="1" min="1">
+          </div>
+        </div>
+        <label for="condition">Condition</label>
+        <select id="condition"></select>
+      </section>
+
+      <section class="panel">
+        <h2>Compound <span id="pick-count">0 / 2</span></h2>
+        <div class="picker" id="picker"></div>
+        <p class="selected-note" id="pick-note"></p>
+      </section>
+
+      <section class="panel">
+        <h2>Dosing</h2>
+        <div class="row">
+          <div>
+            <label for="route">Route</label>
+            <select id="route"></select>
+          </div>
+          <div>
+            <label for="dose">Dose (mg/kg)</label>
+            <input type="number" id="dose" value="4" step="0.1" min="0.001">
+          </div>
+        </div>
+        <div class="row" id="route-extra"></div>
+      </section>
+
+      <section class="panel">
+        <h2>Population</h2>
+        <div class="row">
+          <div>
+            <label for="population">Individuals</label>
+            <input type="number" id="population" value="0" step="10" min="0" max="500">
+          </div>
+          <div>
+            <label for="variability">Clearance CV</label>
+            <input type="number" id="variability" value="0.4" step="0.05" min="0" max="2">
+          </div>
+        </div>
+        <p class="selected-note">0 simulates one animal built from mean
+           parameters. Any other value samples that many individuals and
+           reports the spread.</p>
+      </section>
+
+      </div>
+      <div class="rail-foot">
+        <button class="run" id="run" type="button">Run</button>
+        <div class="error" id="error" role="alert"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="readout" id="readout" hidden></div>
+      <div class="frame-wrap" id="frame-wrap">
+        <div class="scan"></div>
+        <div class="empty" id="empty">
+          <div>
+            <div class="big">no run yet</div>
+            <p>Pick a compound on the left and press <strong>Run</strong>. Pick
+               two and they are simulated together, competing for any enzyme
+               they share &mdash; try the interaction victim beside the CYP3A4
+               inhibitor.</p>
+          </div>
+        </div>
+        <iframe id="frame" title="Simulation report" hidden></iframe>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <strong>Research and teaching tool.</strong> A numerical experiment, not
+    evidence about any real compound, and not a clinical, veterinary or
+    regulatory tool. It does not recommend doses. Most library compounds are
+    archetypes with invented parameters chosen to demonstrate a behaviour;
+    only those marked <strong>lit</strong> carry literature values.
+  </footer>
+</div>
+
+<script id="state" type="application/json">__STATE__</script>
+<script>
+"use strict";
+
+const STATE = JSON.parse(document.getElementById("state").textContent);
+const selected = [];
+
+const $ = (id) => document.getElementById(id);
+const esc = (text) => String(text).replace(/[&<>"']/g, (c) => ({
+  "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+})[c]);
+
+/* ---------- controls ---------- */
+
+function fillSelect(node, options, value) {
+  node.textContent = "";
+  for (const option of options) {
+    const element = document.createElement("option");
+    element.value = option.key;
+    element.textContent = option.label;
+    if (option.key === value) element.selected = true;
+    node.appendChild(element);
+  }
+}
+
+fillSelect($("species"), STATE.species, "rat");
+fillSelect($("condition"), STATE.conditions, "healthy");
+fillSelect($("route"), STATE.routes, "iv");
+
+function speciesWeight(key) {
+  const entry = STATE.species.find((s) => s.key === key);
+  return entry ? entry.weight : 0.25;
+}
+$("weight").value = speciesWeight("rat");
+$("species").addEventListener("change", (event) => {
+  $("weight").value = speciesWeight(event.target.value);
+});
+
+// Route-specific fields, built rather than hidden so the panel never shows a
+// control that does not apply to the chosen route.
+function renderRouteExtra() {
+  const host = $("route-extra");
+  const route = $("route").value;
+  host.textContent = "";
+  if (route === "infusion") {
+    host.innerHTML =
+      '<div><label for="infusion">Infuse over (h)</label>' +
+      '<input type="number" id="infusion" value="2" step="0.5" min="0.1"></div>';
+  } else if (route === "oral") {
+    host.innerHTML =
+      '<div><label for="ka">Absorption ka (1/h)</label>' +
+      '<input type="number" id="ka" value="1" step="0.1" min="0.01"></div>';
+  }
+}
+$("route").addEventListener("change", renderRouteExtra);
+renderRouteExtra();
+
+/* ---------- compound picker ---------- */
+
+const picker = $("picker");
+for (const entry of STATE.compounds) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "pick";
+  button.setAttribute("aria-pressed", "false");
+  button.dataset.key = entry.key;
+  button.innerHTML =
+    (entry.measured ? '<span class="tag">lit</span>' : "") +
+    '<span class="name">' + esc(entry.label) + "</span>" +
+    '<span class="note">' + esc(entry.note) + "</span>";
+  button.addEventListener("click", () => toggle(entry));
+  picker.appendChild(button);
+}
+
+function toggle(entry) {
+  const at = selected.indexOf(entry.key);
+  if (at >= 0) {
+    selected.splice(at, 1);
+  } else {
+    // Two is the limit: an interaction is a property of a pair, and more than
+    // two would need a different comparison than the one the report draws.
+    if (selected.length === 2) selected.shift();
+    selected.push(entry.key);
+    $("dose").value = entry.dose;
+  }
+  refreshPicker();
+}
+
+function refreshPicker() {
+  for (const button of picker.children) {
+    button.setAttribute("aria-pressed", String(selected.includes(button.dataset.key)));
+  }
+  $("pick-count").textContent = selected.length + " / 2";
+
+  const chosen = selected
+    .map((key) => STATE.compounds.find((c) => c.key === key))
+    .filter(Boolean);
+  $("pick-note").textContent = chosen.length === 2
+    ? "Two compounds: each is simulated beside the other and again alone, and "
+      + "the report shows what the pairing did to their exposure."
+    : chosen.length === 1 ? chosen[0].note : "";
+}
+refreshPicker();
+
+/* ---------- running ---------- */
+
+function setStatus(state, text) {
+  $("led").dataset.state = state;
+  $("status-text").textContent = text;
+}
+
+function buildRequest() {
+  const route = $("route").value;
+  const dose = Number($("dose").value);
+  const spec = { route, dose_mg_per_kg: dose };
+  if (route === "infusion") spec.infusion_h = Number($("infusion").value);
+  if (route === "oral") spec.ka = Number($("ka").value);
+
+  return {
+    species: $("species").value,
+    body_weight_kg: Number($("weight").value),
+    condition: $("condition").value,
+    duration_h: Number($("duration").value),
+    population: Number($("population").value),
+    variability: Number($("variability").value),
+    compounds: selected.map((key) => ({ key, ...spec })),
+  };
+}
+
+function showReadout(tiles, extra) {
+  const host = $("readout");
+  host.textContent = "";
+  const cells = tiles.slice();
+  if (extra) cells.push(...extra);
+  for (const tile of cells) {
+    const cell = document.createElement("div");
+    cell.className = "cell";
+    cell.innerHTML =
+      '<div class="k">' + esc(tile.label) + "</div>" +
+      '<div class="v">' + esc(tile.value) +
+      (tile.unit ? '<span class="u">' + esc(tile.unit) + "</span>" : "") + "</div>";
+    host.appendChild(cell);
+  }
+  host.hidden = cells.length === 0;
+}
+
+async function run() {
+  if (!selected.length) {
+    $("error").textContent = "Pick at least one compound.";
+    setStatus("error", "no compound");
+    return;
+  }
+
+  $("error").textContent = "";
+  $("run").disabled = true;
+  $("frame-wrap").dataset.busy = "true";
+  setStatus("busy", "simulating");
+
+  try {
+    const response = await fetch("/api/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(buildRequest()),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "the run failed");
+
+    const extra = [];
+    if (data.interaction) {
+      const victim = data.interaction.compounds
+        .slice()
+        .sort((a, b) => b.aucRatio - a.aucRatio)[0];
+      extra.push({
+        label: "Exposure change",
+        value: victim.aucRatio.toFixed(2) + "×",
+        unit: victim.classification,
+      });
+    }
+    if (data.population) {
+      extra.push({ label: "Individuals", value: String(data.population.n), unit: "" });
+      extra.push({
+        label: "Spread",
+        value: data.population.foldRange.toFixed(2) + "×",
+        unit: "5-95th",
+      });
+    }
+    showReadout(data.tiles, extra);
+
+    $("empty").hidden = true;
+    const frame = $("frame");
+    frame.hidden = false;
+    frame.src = data.report + "?t=" + Date.now();
+    setStatus("idle", "complete");
+  } catch (error) {
+    $("error").textContent = error.message;
+    setStatus("error", "failed");
+  } finally {
+    $("run").disabled = false;
+    $("frame-wrap").dataset.busy = "false";
+  }
+}
+
+$("run").addEventListener("click", run);
+document.addEventListener("keydown", (event) => {
+  // Enter runs from anywhere except a select, where it opens the list.
+  if (event.key === "Enter" && event.target.tagName !== "SELECT") run();
+});
+</script>
+</body>
+</html>

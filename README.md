@@ -33,11 +33,30 @@ intravenous to oral dosing, without starting over.
 
 ```bash
 pip install -e .
-vivosim demo interaction --open
+vivosim serve
 ```
 
-That renders a worked example and opens it. To run your own study, write one
-small text file — no Python needed:
+That opens a **browser console**: pick a compound from the library, set a
+species, a condition and a dose, and press Run. Pick two and they are
+simulated together, competing for any enzyme they share. Turn the population
+up and you get the spread across individuals instead of one animal. The full
+report renders beside the controls.
+
+The library is mostly **archetypes** — "lipophilic neutral", "renally
+cleared", "interaction victim" — named for the behaviour they demonstrate,
+because inventing parameters and putting a real drug's name on them would be a
+lie that looks like data. Theophylline is the exception and is marked `lit`:
+its parameters are literature values, and the package predicts a published
+study with them.
+
+The console binds to localhost and runs on the standard library's HTTP server.
+It is a convenience for one person on one machine, not a deployment target —
+no authentication, no sandboxing. Do not expose it to a network.
+
+### Or from a file
+
+To script it, or to keep a study under version control, write one small text
+file — no Python needed:
 
 ```bash
 vivosim new study.toml      # a commented starter file
@@ -76,6 +95,7 @@ animal. The page it renders is a single self-contained HTML file.
 
 | Command | |
 |---|---|
+| `vivosim serve` | open the browser console |
 | `vivosim demo` | list the built-in examples |
 | `vivosim new study.toml` | write a commented starter file |
 | `vivosim run study.toml --open` | simulate and open the result |
