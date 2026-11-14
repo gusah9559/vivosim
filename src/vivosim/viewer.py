@@ -53,6 +53,26 @@ _ORGAN_LAYOUT: dict[str, dict[str, Any]] = {
     "kidney": {"shape": "ellipse", "cx": 302, "cy": 76, "rx": 11, "ry": 8},
 }
 
+# Organ positions for the rotatable 3D view, in a right-handed scene where
+# x runs nose to tail, y runs back to belly and z runs left to right. Radii are
+# in the same units. These are anatomical *arrangement*, not anatomy: the
+# shapes are spheres, not organ meshes, because a plausible-looking mesh nobody
+# measured would be a worse lie than an obvious abstraction.
+#
+# A tissue may appear more than once -- lungs and kidneys are paired -- and
+# every sphere bound to one tissue shows that tissue's single concentration.
+_ORGAN_3D: list[dict[str, Any]] = [
+    {"tissue": "brain", "x": -128, "y": -14, "z": 0, "r": 15},
+    {"tissue": "lung", "x": -56, "y": -20, "z": -20, "r": 21},
+    {"tissue": "lung", "x": -56, "y": -20, "z": 20, "r": 21},
+    {"tissue": "heart", "x": -40, "y": 10, "z": 0, "r": 14},
+    {"tissue": "liver", "x": 6, "y": 0, "z": 0, "r": 29},
+    {"tissue": "spleen", "x": 26, "y": 22, "z": -26, "r": 11},
+    {"tissue": "kidney", "x": 34, "y": -26, "z": -22, "r": 13},
+    {"tissue": "kidney", "x": 34, "y": -26, "z": 22, "r": 13},
+    {"tissue": "gut", "x": 62, "y": 12, "z": 0, "r": 31},
+]
+
 _BULK_TISSUES = ("muscle", "adipose", "skin", "bone", "rest")
 _BULK_Y = 230
 _BULK_HEIGHT = 34
@@ -107,7 +127,9 @@ def build_payload(result: Displayable, title: str | None = None) -> dict[str, An
         "tissueOrder": tissues,
         "labels": _labels(series_order),
         "anatomy": _anatomy_layout(tissues),
+        "anatomy3d": [organ for organ in _ORGAN_3D if organ["tissue"] in tissues],
         "anatomyDecades": _ANATOMY_DECADES,
+        "glossary": _GLOSSARY,
         "compounds": blocks,
         "interaction": _interaction_block(report),
         "footer": _footer(results),
@@ -410,3 +432,49 @@ def _escape(text: str) -> str:
         .replace(">", "&gt;")
         .replace('"', "&quot;")
     )
+
+
+# Plain-language notes for the terms on the page. The viewer is read by people
+# who did not build the model -- and often by the person who commissioned it
+# rather than the pharmacologist who will use it -- so every piece of jargon on
+# screen has to be able to explain itself on hover.
+_GLOSSARY: dict[str, str] = {
+    "Peak plasma": (
+        "The highest concentration reached in blood plasma. How strong the "
+        "exposure gets at its worst moment."
+    ),
+    "Time of peak": "When that highest concentration happened.",
+    "Plasma AUC": (
+        "Area under the concentration-time curve: concentration added up over "
+        "the whole simulation. The standard measure of total exposure -- how "
+        "much the body saw, not just how high it got."
+    ),
+    "Vss": (
+        "Volume of distribution. A value near 0.05 L/kg means the compound "
+        "stays in the blood; a large one means most of it is hiding in tissue "
+        "rather than circulating."
+    ),
+    "Eliminated": (
+        "The fraction of the administered amount that has been cleared by the "
+        "end of the simulation. The rest is still in the body."
+    ),
+    "Mass balance": (
+        "A self-check, not a result. Amount in the body plus amount eliminated "
+        "must equal amount given. Anything far from zero means the numerical "
+        "solution drifted and nothing else on the page should be trusted."
+    ),
+    "plasma": (
+        "The liquid part of blood, with cells removed. What a blood sample "
+        "actually measures, so it is the number to compare against real data."
+    ),
+    "AUC alone": "Total exposure when this compound is given by itself.",
+    "AUC together": "Total exposure when it is given alongside the others.",
+    "Ratio": (
+        "Exposure together divided by exposure alone. Above 1 means the other "
+        "compound made this one build up."
+    ),
+    "Effect": (
+        "How large that change is: weak from 1.25 times, moderate from 2, "
+        "strong from 5. Below 1.25 it is not treated as an effect."
+    ),
+}

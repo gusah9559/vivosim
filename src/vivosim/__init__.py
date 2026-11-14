@@ -42,6 +42,13 @@ from .partitioning import (
     volume_of_distribution_L_per_kg,
 )
 from .physiology import MOUSE, RAT, SPECIES, Physiology, TissueSpec, get_physiology
+from .population import (
+    Individual,
+    PopulationResult,
+    Variability,
+    sample_population,
+    simulate_population,
+)
 from .results import Result, Study
 from .simulate import simulate
 from .tissue_composition import (
@@ -70,12 +77,15 @@ __all__ = [
     "MolecularProperties",
     "OralDose",
     "PBPKModel",
+    "Individual",
     "Physiology",
+    "PopulationResult",
     "Regimen",
     "Result",
     "Study",
     "TissueComposition",
     "TissueSpec",
+    "Variability",
     "__version__",
     "apparent_logd",
     "assess_interaction",
@@ -84,6 +94,8 @@ __all__ = [
     "get_physiology",
     "predict_partition_coefficients",
     "repeated",
+    "sample_population",
+    "simulate_population",
     "simulate",
     "volume_of_distribution_L_per_kg",
 ]

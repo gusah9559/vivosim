@@ -217,6 +217,46 @@ and enough substrate still outruns the inhibitor. Non-competitive inhibition,
 mechanism-based inactivation and enzyme induction behave differently and are
 not implemented.
 
+## A population, not one animal
+
+Every result above describes one animal built from mean parameters. No such
+animal exists. Individuals differ in body weight, organ size, plasma binding
+and — most of all — in how much metabolising enzyme they express, which varies
+several-fold. That is why the same dose can be uneventful in most animals and
+an overdose in a few.
+
+```python
+from vivosim import Variability, simulate_population
+
+population = simulate_population(
+    compound, physiology, regimen,
+    n=200, seed=42, duration_h=48,
+    variability=Variability(hepatic_clearance=0.4, body_weight=0.15),
+)
+
+population.fold_range()                      # 1.6 — spread between the 5th and 95th percentile
+population.percentile_band(5, 95)            # envelopes to plot behind the median
+population.probability_above(5.0)            # fraction whose peak exceeds 5 mg/L
+population.probability_auc_within(12, 25)    # fraction landing in a target window
+```
+
+Parameters are drawn from lognormal distributions — positive, right-skewed,
+and what the field uses. Always pass a `seed` for anything you intend to
+report.
+
+**What the probabilities mean.** They are about *exposure*: whether a
+concentration lands inside a window you supplied. A compound being present at a
+given concentration is not the same as a compound having an effect, so none of
+these is a probability that a drug works. Thresholds are yours to supply from
+measured data — nothing here knows what is safe.
+
+**What is approximated.** Parameters are sampled independently. Real ones are
+correlated: a heavier animal has a bigger liver, and its enzymes move together.
+Ignoring that widens some distributions and narrows others, so the percentiles
+are an approximation of the spread rather than a calibrated one. The default
+variability figures are generic starting points, not measurements of any real
+population.
+
 ## Viewer
 
 ```python
@@ -294,9 +334,13 @@ Named so that nobody mistakes an absent mechanism for a prediction:
 - Active transport, enterohepatic recycling, biliary excretion.
 - Non-competitive inhibition, mechanism-based inactivation, enzyme induction.
 - Metabolites. Only the parent compound is tracked.
+- Correlation between sampled population parameters.
+- Pharmacodynamics. Nothing here predicts whether a compound has an effect,
+  only where it goes and how long it stays.
+- Disease states. A parameter set describes a healthy animal unless you
+  override it yourself.
 - Partitioning of strong bases into acidic phospholipid (Rodgers & Rowland).
 - pKa prediction from structure.
-- Population variability. One simulation describes one animal.
 
 ## Validation
 
@@ -314,6 +358,14 @@ independently of the implementation:
 - **The saturation limit.** Far below Km a saturable compound reproduces a
   first-order one with `CL_int = Vmax/Km` exactly, and above Km no more than
   `Vmax * duration` can be cleared however much is given.
+- **Population control.** A population simulated with zero variability
+  reproduces the single-animal result exactly, and lognormal sampling preserves
+  the mean rather than drifting below it.
+- **Extraction-dependent variability.** Enzyme variability spreads exposure for
+  a compound the liver clears slowly, and is buffered for one cleared as fast
+  as blood delivers it — a known pharmacological consequence of putting
+  clearance inside the circulation rather than applying it to the compound
+  alone.
 - **Interaction specificity.** Compounds sharing an enzyme raise each other's
   exposure; compounds on different enzymes reproduce their solo profiles.
   Overwhelming inhibition converges on the no-metabolism case.

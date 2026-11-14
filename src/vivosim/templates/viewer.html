@@ -203,6 +203,59 @@
   .ratio { font-variant-numeric: tabular-nums; font-weight: 600; }
   .solo-path { fill: none; stroke-width: 2; stroke-dasharray: 5 4; opacity: 0.85; }
 
+
+  /* 3D organ view. Built from CSS transforms rather than a WebGL library so
+     the page stays a single self-contained file. Each organ is a billboard --
+     counter-rotated to face the viewer -- which reads as a sphere while the
+     browser depth-sorts it against the others for free. */
+  .stage {
+    position: relative; width: 100%; aspect-ratio: 4 / 3;
+    perspective: 900px; cursor: grab; touch-action: none;
+    border-radius: 10px; overflow: hidden; background: var(--plane);
+  }
+  .stage:active { cursor: grabbing; }
+  .scene {
+    position: absolute; inset: 0; transform-style: preserve-3d;
+    transition: transform 90ms linear;
+  }
+  .scene.dragging { transition: none; }
+  .orb {
+    position: absolute; left: 50%; top: 50%;
+    transform-style: preserve-3d; border-radius: 50%;
+    will-change: transform; cursor: pointer;
+  }
+  .orb-skin {
+    position: absolute; inset: 0; border-radius: 50%;
+    background: radial-gradient(circle at 34% 30%,
+      color-mix(in srgb, var(--orb) 72%, white), var(--orb) 62%,
+      color-mix(in srgb, var(--orb) 72%, black));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--orb) 60%, transparent),
+                0 0 var(--bloom) color-mix(in srgb, var(--orb) 70%, transparent);
+  }
+  .orb.is-selected .orb-skin { box-shadow: 0 0 0 2px var(--ink-1), 0 0 24px var(--orb); }
+  .orb-tag {
+    position: absolute; left: 50%; top: 100%; transform: translate(-50%, 4px);
+    font-size: 10px; color: var(--ink-2); white-space: nowrap; pointer-events: none;
+  }
+  .ring {
+    position: absolute; left: 50%; top: 50%; border-radius: 50%;
+    border: 1px solid var(--axis); opacity: 0.4; pointer-events: none;
+  }
+  .view-toggle { display: inline-flex; border: 1px solid var(--hairline);
+                 border-radius: 6px; overflow: hidden; }
+  .view-toggle button {
+    background: none; border: 0; color: var(--ink-muted); font: inherit;
+    font-size: 12px; padding: 4px 11px; cursor: pointer;
+  }
+  .view-toggle button[aria-pressed="true"] { background: var(--plane); color: var(--ink-1); }
+
+  /* Terms that can explain themselves. */
+  .term { border-bottom: 1px dotted var(--axis); cursor: help; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .scene { transition: none; }
+  }
+
   footer { color: var(--ink-muted); font-size: 12px; margin-top: 28px; line-height: 1.7; }
   footer strong { color: var(--ink-2); font-weight: 600; }
 
@@ -268,7 +321,16 @@
      scrubber to follow it through the circulation.</p>
   <div class="anatomy-layout">
     <div>
-      <figure>
+      <div class="controls">
+        <div class="view-toggle" role="group" aria-label="Anatomy view">
+          <button type="button" id="view-3d" aria-pressed="true">3D</button>
+          <button type="button" id="view-2d" aria-pressed="false">Diagram</button>
+        </div>
+      </div>
+      <div class="stage" id="stage" hidden>
+        <div class="scene" id="scene"></div>
+      </div>
+      <figure id="anatomy-figure" hidden>
         <svg id="anatomy" viewBox="0 0 440 300" role="img" aria-labelledby="anatomy-desc"></svg>
         <desc id="anatomy-desc">Schematic rat anatomy with organs shaded by compound
           concentration at the selected time.</desc>
@@ -809,6 +871,7 @@ function paintAnatomy() {
     node.classList.toggle("is-selected", state.focusTissue === tissue);
   }
 
+  paint3D();
   document.getElementById("clock").textContent = fmt(DATA.time[index], 2) + " h";
   document.getElementById("cb-max").textContent = fmt(scale) + " mg/L";
 
@@ -987,6 +1050,7 @@ function selectCompound(index) {
   document.getElementById("regimen").textContent = C().regimen;
 
   buildTiles();
+  explainTerms();
   rebuildSeriesChips();
   refreshChips();
   drawChart();
@@ -1159,6 +1223,144 @@ function drawInteractionChart() {
   }
 }
 
+
+/* ---------- 3D organ view ---------- */
+
+const stage = document.getElementById("stage");
+const scene = document.getElementById("scene");
+const orbs = [];
+const view3d = { yaw: -28, pitch: -14, dragging: false, lastX: 0, lastY: 0 };
+
+function build3D() {
+  scene.textContent = "";
+  orbs.length = 0;
+
+  // A few wireframe rings stand in for the body, giving the eye something to
+  // judge the rotation against without pretending to be an animal.
+  const rings = [
+    { w: 300, h: 150, rx: 0, ry: 0 },
+    { w: 300, h: 150, rx: 0, ry: 90 },
+    { w: 150, h: 150, rx: 90, ry: 0 },
+  ];
+  for (const spec of rings) {
+    const ring = document.createElement("div");
+    ring.className = "ring";
+    ring.style.width = spec.w + "px";
+    ring.style.height = spec.h + "px";
+    ring.style.transform =
+      "translate(-50%, -50%) rotateX(" + spec.rx + "deg) rotateY(" + spec.ry + "deg)";
+    scene.appendChild(ring);
+  }
+
+  for (const organ of DATA.anatomy3d) {
+    const node = document.createElement("div");
+    node.className = "orb";
+    const size = organ.r * 2;
+    node.style.width = size + "px";
+    node.style.height = size + "px";
+    node.dataset.x = organ.x;
+    node.dataset.y = organ.y;
+    node.dataset.z = organ.z;
+
+    const skin = document.createElement("div");
+    skin.className = "orb-skin";
+    node.appendChild(skin);
+
+    const tag = document.createElement("span");
+    tag.className = "orb-tag";
+    tag.textContent = label(organ.tissue);
+    node.appendChild(tag);
+
+    node.title = label(organ.tissue);
+    node.addEventListener("click", (event) => {
+      event.stopPropagation();
+      focusTissue(organ.tissue);
+    });
+
+    scene.appendChild(node);
+    orbs.push({ node, skin, tissue: organ.tissue, organ });
+  }
+  place3D();
+}
+
+function place3D() {
+  scene.style.transform =
+    "rotateX(" + view3d.pitch + "deg) rotateY(" + view3d.yaw + "deg)";
+  for (const orb of orbs) {
+    const { x, y, z } = orb.organ;
+    // Counter-rotating each orb by the scene's own rotation keeps it facing
+    // the viewer, so a flat circle reads as a sphere from every angle.
+    orb.node.style.transform =
+      "translate(-50%, -50%) translate3d(" + x + "px," + y + "px," + z + "px)" +
+      " rotateY(" + -view3d.yaw + "deg) rotateX(" + -view3d.pitch + "deg)";
+  }
+}
+
+function paint3D() {
+  const scale = C().anatomyMax || 1;
+  for (const orb of orbs) {
+    const values = C().series[orb.tissue];
+    const value = values ? values[state.timeIndex] : 0;
+    const colour = rampColour(value);
+    orb.node.style.setProperty("--orb", colour);
+    // Brightly loaded organs bloom; empty ones sit flat. The glow carries the
+    // same magnitude the fill does, so it is redundant rather than decorative.
+    const fraction = scale > 0 ? Math.min(1, value / scale) : 0;
+    orb.node.style.setProperty("--bloom", (6 + fraction * 26).toFixed(1) + "px");
+    orb.node.classList.toggle("is-selected", state.focusTissue === orb.tissue);
+  }
+}
+
+stage.addEventListener("pointerdown", (event) => {
+  view3d.dragging = true;
+  view3d.lastX = event.clientX;
+  view3d.lastY = event.clientY;
+  scene.classList.add("dragging");
+  stage.setPointerCapture(event.pointerId);
+});
+stage.addEventListener("pointermove", (event) => {
+  if (!view3d.dragging) return;
+  view3d.yaw += (event.clientX - view3d.lastX) * 0.5;
+  view3d.pitch -= (event.clientY - view3d.lastY) * 0.5;
+  view3d.pitch = Math.max(-85, Math.min(85, view3d.pitch));
+  view3d.lastX = event.clientX;
+  view3d.lastY = event.clientY;
+  place3D();
+});
+for (const done of ["pointerup", "pointercancel", "pointerleave"]) {
+  stage.addEventListener(done, () => {
+    view3d.dragging = false;
+    scene.classList.remove("dragging");
+  });
+}
+
+const view3dButton = document.getElementById("view-3d");
+const view2dButton = document.getElementById("view-2d");
+
+function setAnatomyView(three) {
+  stage.hidden = !three;
+  document.getElementById("anatomy-figure").hidden = three;
+  view3dButton.setAttribute("aria-pressed", String(three));
+  view2dButton.setAttribute("aria-pressed", String(!three));
+  if (three) { place3D(); paint3D(); } else { paintAnatomy(); }
+}
+view3dButton.addEventListener("click", () => setAnatomyView(true));
+view2dButton.addEventListener("click", () => setAnatomyView(false));
+
+/* ---------- glossary ---------- */
+
+function explainTerms() {
+  // Attach the plain-language note to every term that appears on the page, so
+  // a reader who did not build the model can find out what a number means.
+  const targets = document.querySelectorAll(".tile .label, #interaction-table th");
+  for (const node of targets) {
+    const note = DATA.glossary[node.textContent.trim()];
+    if (!note) continue;
+    node.classList.add("term");
+    node.title = note;
+  }
+}
+
 /* ---------- theme ---------- */
 
 const themeButton = document.getElementById("theme-toggle");
@@ -1186,10 +1388,13 @@ rebuildSeriesChips();
 refreshChips();
 drawChart();
 buildAnatomy();
+build3D();
+setAnatomyView(true);
 paintAnatomy();
 buildMultiples();
 buildTable();
 buildInteraction();
+explainTerms();
 
 const prefersDark = window.matchMedia("(prefers-color-scheme: dark)");
 themeButton.textContent = prefersDark.matches ? "Light" : "Dark";
