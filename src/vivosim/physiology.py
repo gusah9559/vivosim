@@ -19,7 +19,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 
-__all__ = ["TissueSpec", "Physiology", "RAT", "MOUSE", "get_physiology", "SPECIES"]
+__all__ = [
+    "TissueSpec",
+    "Physiology",
+    "RAT",
+    "MOUSE",
+    "HUMAN",
+    "get_physiology",
+    "SPECIES",
+]
 
 
 @dataclass(frozen=True)
@@ -236,7 +244,34 @@ MOUSE = Physiology(
     },
 )
 
-SPECIES: dict[str, Physiology] = {"rat": RAT, "mouse": MOUSE}
+# Reference adult human. Included so that an animal result can be put beside
+# the species the work is ultimately about, and so the package can be checked
+# against the far larger body of published human data.
+HUMAN = Physiology(
+    species="human",
+    body_weight_kg=70.0,
+    cardiac_output_coefficient=15.0,
+    cardiac_output_exponent=0.75,
+    arterial_blood_fraction=0.0198,
+    venous_blood_fraction=0.0593,
+    plasma_fraction=0.0424,
+    tissues={
+        "lung": TissueSpec(volume_fraction=0.0076, flow_fraction=0.0),
+        "liver": TissueSpec(volume_fraction=0.0257, flow_fraction=0.065),
+        "gut": TissueSpec(volume_fraction=0.0171, flow_fraction=0.170, drains_to="liver"),
+        "spleen": TissueSpec(volume_fraction=0.0026, flow_fraction=0.017, drains_to="liver"),
+        "kidney": TissueSpec(volume_fraction=0.0044, flow_fraction=0.190),
+        "heart": TissueSpec(volume_fraction=0.0047, flow_fraction=0.040),
+        "brain": TissueSpec(volume_fraction=0.0200, flow_fraction=0.120),
+        "muscle": TissueSpec(volume_fraction=0.4000, flow_fraction=0.170),
+        "adipose": TissueSpec(volume_fraction=0.2142, flow_fraction=0.050),
+        "skin": TissueSpec(volume_fraction=0.0371, flow_fraction=0.050),
+        "bone": TissueSpec(volume_fraction=0.0856, flow_fraction=0.050),
+        "rest": TissueSpec(volume_fraction=0.1019, flow_fraction=0.078),
+    },
+)
+
+SPECIES: dict[str, Physiology] = {"rat": RAT, "mouse": MOUSE, "human": HUMAN}
 
 
 def get_physiology(species: str, body_weight_kg: float | None = None) -> Physiology:

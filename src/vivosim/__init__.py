@@ -50,7 +50,7 @@ from .partitioning import (
     volume_of_distribution_L_per_kg,
 )
 from .pharmacodynamics import EffectProfile, EmaxModel, effect_of
-from .physiology import MOUSE, RAT, SPECIES, Physiology, TissueSpec, get_physiology
+from .physiology import HUMAN, MOUSE, RAT, SPECIES, Physiology, TissueSpec, get_physiology
 from .population import (
     Individual,
     PopulationResult,
@@ -65,10 +65,12 @@ from .tissue_composition import (
     RAT_TISSUE_COMPOSITION,
     TissueComposition,
 )
+from .validation import ObservedProfile, ValidationResult, validate, validate_many
 
 __version__ = "0.0.1"
 
 __all__ = [
+    "HUMAN",
     "MOUSE",
     "PLASMA_COMPOSITION",
     "RAT",
@@ -88,6 +90,7 @@ __all__ = [
     "IVInfusion",
     "Metabolism",
     "MolecularProperties",
+    "ObservedProfile",
     "OralDose",
     "PBPKModel",
     "HEALTHY",
@@ -99,6 +102,7 @@ __all__ = [
     "Study",
     "TissueComposition",
     "TissueSpec",
+    "ValidationResult",
     "Variability",
     "__version__",
     "apparent_logd",
@@ -114,6 +118,8 @@ __all__ = [
     "repeated",
     "sample_population",
     "simulate_population",
+    "validate",
+    "validate_many",
     "simulate",
     "volume_of_distribution_L_per_kg",
 ]

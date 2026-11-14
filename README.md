@@ -406,7 +406,52 @@ Named so that nobody mistakes an absent mechanism for a prediction:
 
 ## Validation
 
-The test suite checks the engine against limits where the answer is known
+### Against measured data
+
+Everything else in this suite checks that the code does what the model says.
+This checks whether the model says anything true, by predicting concentrations
+somebody actually measured.
+
+**Theophylline, 12 subjects, single oral dose** ([`Theoph`][theoph], the
+dataset distributed with R):
+
+| | |
+|---|---|
+| Measurements | 120 (one pre-dose sample per subject excluded, where a fold error against a predicted zero is undefined) |
+| Within 2-fold | **92%** |
+| Within 1.5-fold | 63% |
+| Bias (AFE) | 0.87 |
+| Precision (AAFE) | 1.46 |
+| Worst single point | 4.95x |
+
+Every compound parameter was a literature value for theophylline, fixed before
+the data was looked at and not adjusted afterwards — so this is a *prediction*,
+not a fit. That distinction is what makes the number mean anything, and
+`validate()` asks you to record which one you did, because a reader cannot tell
+from the plot.
+
+Two-fold is the conventional acceptance bar for a PBPK prediction. It is a weak
+bar — it is the convention because these predictions carry large parameter
+uncertainty, not because being wrong by 90% is good.
+
+**Where it misses:** almost entirely in the first hour. A single literature
+absorption rate was used for everyone, and absorption varies a great deal
+between individuals. Median fold error by phase: 1.47x before 1 h, falling to
+1.32x from 4 h on, once distribution and elimination govern the curve. The
+model is better at where a compound goes than at how fast it gets in.
+
+```bash
+python examples/validate_theophylline.py
+```
+
+The dataset is downloaded rather than vendored, so this repository
+redistributes no third-party data.
+
+[theoph]: https://stat.ethz.ch/R-manual/R-devel/library/datasets/html/Theoph.html
+
+### Against known limits
+
+The rest of the suite checks the engine against cases where the answer follows
 independently of the implementation:
 
 - **Conservation of mass** for every route and regimen. Amount in the body plus
@@ -451,11 +496,17 @@ pytest
 
 ## Physiological parameters
 
-Organ volumes and blood flows for rat and mouse are literature means from:
+Organ volumes and blood flows for rat, mouse and human are literature means from:
 
 > Brown RP, Delp MD, Lindstedt SL, Rhomberg LR, Beliles RP (1997).
 > "Physiological parameter values for physiologically based pharmacokinetic
 > models." *Toxicology and Industrial Health* 13(4):407-484.
+
+`get_physiology("human")` gives a reference 70 kg adult, added so predictions
+can be checked against the far larger body of published human data — its
+derived figures (6.0 L/min cardiac output, 3.0 L plasma, 1.8 L liver) are
+themselves asserted in the tests, so an arithmetic slip in the table cannot
+pass unnoticed.
 
 Each species includes a lumped `rest` compartment carrying the balance of body
 weight and cardiac output, so that both close exactly; without it the named
