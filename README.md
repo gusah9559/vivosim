@@ -136,6 +136,67 @@ from vivosim import volume_of_distribution_L_per_kg
 volume_of_distribution_L_per_kg(compound, get_physiology("rat"))
 ```
 
+## Saturable metabolism and drug-drug interactions
+
+First-order clearance removes a fixed *fraction* of what is present, so
+exposure is proportional to dose and two compounds given together never notice
+each other. Real metabolism is done by a finite number of enzyme molecules.
+Supply enough substrate and they saturate — and a second compound competing for
+the same enzyme displaces the first.
+
+Declare a saturable pathway instead of a clearance, and name the enzyme:
+
+```python
+from vivosim import Compound, Inhibition, Metabolism, simulate
+
+victim = Compound(
+    name="victim",
+    fraction_unbound_plasma=0.5,
+    metabolism=(Metabolism(enzyme="CYP3A4", vmax_mg_per_h=2.0, km_mg_per_L=0.5),),
+)
+```
+
+Exposure then stops being proportional to dose, which is exactly the regime in
+which a linear model is dangerous:
+
+| Dose | AUC | AUC/dose |
+|---|---|---|
+| 0.1 mg | 1.64 | 16.4 |
+| 1 mg | 16.7 | 16.7 |
+| 10 mg | 206 | 20.6 |
+| 100 mg | 6705 | 67.1 |
+
+Below Km the compound behaves exactly like a first-order one with
+`CL_int = Vmax/Km` — the test suite pins that limit — and above it, clearance
+falls away.
+
+Compounds simulated **together** compete for any enzyme they share:
+
+```python
+inhibitor = Compound(
+    name="inhibitor",
+    fraction_unbound_plasma=0.5,
+    inhibits=(Inhibition(enzyme="CYP3A4", ki_mg_per_L=0.05),),
+)
+
+study = simulate([victim, inhibitor], physiology, [victim_doses, inhibitor_doses])
+
+study["victim"].auc("plasma")     # 19.6, against 6.2 for the victim alone
+study.interacting_enzymes()       # {'CYP3A4': ['victim', 'inhibitor']}
+```
+
+This cannot be reproduced by simulating each compound separately and overlaying
+the results: the interaction is a property of the pair. A substrate competes
+through its own Km — occupying the site is what matters, not whether the
+occupier is turned over — and a pure inhibitor declares a Ki without being
+metabolised. Compounds on *different* enzymes are verified to be unaffected by
+each other, so the coupling exists only where it should.
+
+Only **competitive** inhibition is modelled: apparent Km rises, Vmax does not,
+and enough substrate still outruns the inhibitor. Non-competitive inhibition,
+mechanism-based inactivation and enzyme induction behave differently and are
+not implemented.
+
 ## Viewer
 
 ```python
@@ -202,11 +263,9 @@ Named so that nobody mistakes an absent mechanism for a prediction:
 
 - Permeability-limited tissue uptake, for compounds that do not equilibrate
   instantly with their tissue.
-- Saturable (Michaelis-Menten) metabolism, so exposure is strictly linear in
-  dose.
 - Active transport, enterohepatic recycling, biliary excretion.
+- Non-competitive inhibition, mechanism-based inactivation, enzyme induction.
 - Metabolites. Only the parent compound is tracked.
-- Drug-drug interactions.
 - Partitioning of strong bases into acidic phospholipid (Rodgers & Rowland).
 - pKa prediction from structure.
 - Population variability. One simulation describes one animal.
@@ -224,6 +283,12 @@ independently of the implementation:
   `CL = Q_h * CL_int_u / (Q_h + CL_int_u)` computed by hand.
 - **Flow and volume closure.** Tissue blood flows sum to cardiac output and
   volumes sum to body weight, both exactly.
+- **The saturation limit.** Far below Km a saturable compound reproduces a
+  first-order one with `CL_int = Vmax/Km` exactly, and above Km no more than
+  `Vmax * duration` can be cleared however much is given.
+- **Interaction specificity.** Compounds sharing an enzyme raise each other's
+  exposure; compounds on different enzymes reproduce their solo profiles.
+  Overwhelming inhibition converges on the no-metabolism case.
 - **First pass.** An oral dose gives lower exposure than the same intravenous
   dose when the liver clears the compound, and identical exposure when it does
   not.

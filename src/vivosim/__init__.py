@@ -24,7 +24,9 @@ Example:
 """
 
 from .compound import Compound
+from .coupled import CoupledModel
 from .dosing import Dose, IVBolus, IVInfusion, OralDose, Regimen, repeated
+from .kinetics import Inhibition, Metabolism
 from .model import PBPKModel
 from .partitioning import (
     MolecularProperties,
@@ -34,7 +36,7 @@ from .partitioning import (
     volume_of_distribution_L_per_kg,
 )
 from .physiology import MOUSE, RAT, SPECIES, Physiology, TissueSpec, get_physiology
-from .results import Result
+from .results import Result, Study
 from .simulate import simulate
 from .tissue_composition import (
     PLASMA_COMPOSITION,
@@ -51,15 +53,19 @@ __all__ = [
     "RAT_TISSUE_COMPOSITION",
     "SPECIES",
     "Compound",
+    "CoupledModel",
     "Dose",
+    "Inhibition",
     "IVBolus",
     "IVInfusion",
+    "Metabolism",
     "MolecularProperties",
     "OralDose",
     "PBPKModel",
     "Physiology",
     "Regimen",
     "Result",
+    "Study",
     "TissueComposition",
     "TissueSpec",
     "__version__",

@@ -131,9 +131,10 @@ class PBPKModel:
 
         # Clearance terms, folded into the unit conversions they need once.
         c = self.compound
-        self._hepatic_cl = c.hepatic_intrinsic_clearance_L_per_h * (
-            c.fraction_unbound_plasma / c.blood_plasma_ratio
-        )
+        # Only unbound compound reaches an enzyme, and the circulation carries
+        # whole blood, so blood leaving the liver converts to unbound by this.
+        self._unbound_factor = c.fraction_unbound_plasma / c.blood_plasma_ratio
+        self._hepatic_cl = c.hepatic_intrinsic_clearance_L_per_h * self._unbound_factor
         self._renal_cl = c.renal_clearance_L_per_h
 
         self._ka = np.array(
@@ -161,12 +162,31 @@ class PBPKModel:
 
     # -- derivatives -------------------------------------------------------
 
-    def rhs(self, t: float, y: NDArray[np.float64]) -> NDArray[np.float64]:
+    def liver_unbound_mg_per_L(self, y: NDArray[np.float64]) -> float:
+        """Unbound concentration in blood leaving the liver, in mg/L.
+
+        This is what an enzyme in the liver actually sees, and so the input to
+        saturable metabolism and to competition with other compounds.
+        """
+        amount = y[self.i_liver]
+        liver_out = amount / (self._volumes[self._liver_pos] * self._kp_blood[self._liver_pos])
+        return liver_out * self._unbound_factor
+
+    def rhs(
+        self,
+        t: float,
+        y: NDArray[np.float64],
+        saturable_rate_mg_per_h: float = 0.0,
+    ) -> NDArray[np.float64]:
         """Time derivative of the state vector.
 
         Args:
             t: Time in hours.
             y: Current state vector of amounts in mg.
+            saturable_rate_mg_per_h: Metabolic rate from saturable pathways,
+                computed outside the model because it may depend on other
+                compounds competing for the same enzyme. Added to this
+                compound's own first-order hepatic clearance.
 
         Returns:
             dy/dt in mg/h.
@@ -198,7 +218,10 @@ class PBPKModel:
         # Liver: hepatic artery plus portal inflow in, total hepatic outflow
         # out, less what metabolism removes.
         portal_in = float(np.sum(self._flows[self._to_liver] * c_out[self._to_liver]))
-        hepatic_rate = self._hepatic_cl * liver_out
+        # First-order clearance plus whatever the saturable pathways removed.
+        # The saturable part cannot take out more than is there, which an
+        # explicit guard enforces rather than leaving to the solver.
+        hepatic_rate = self._hepatic_cl * liver_out + max(0.0, saturable_rate_mg_per_h)
         dy[self.i_liver] += (
             q_hepatic_artery * c_arterial + portal_in - q_liver_total * liver_out - hepatic_rate
         )

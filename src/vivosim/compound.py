@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 
+from .kinetics import Inhibition, Metabolism, intrinsic_clearance
+
 __all__ = ["Compound"]
 
 
@@ -33,10 +35,18 @@ class Compound:
             circulation carries.
         fraction_unbound_plasma: Fraction of plasma drug not bound to protein.
             Only the unbound fraction is available to metabolising enzymes.
-        hepatic_intrinsic_clearance_L_per_h: Intrinsic metabolic clearance in
-            the liver, referenced to unbound concentration.
+        hepatic_intrinsic_clearance_L_per_h: First-order intrinsic metabolic
+            clearance in the liver, referenced to unbound concentration. Use
+            this when the compound stays well below saturation; use
+            `metabolism` when it does not.
         renal_clearance_L_per_h: Clearance of unchanged drug by the kidney,
             referenced to the blood concentration leaving the kidney.
+        metabolism: Saturable hepatic pathways. Each names an enzyme, so two
+            compounds sharing one compete for it. Saturable and first-order
+            clearance may coexist; their rates add.
+        inhibits: Enzymes this compound competitively inhibits without being
+            metabolised by them. A compound that is a substrate already
+            competes through its own Km and need not be listed again.
         molecular_weight: Molar mass in g/mol. Optional; used only to convert
             between mass and molar units when reporting.
     """
@@ -48,6 +58,8 @@ class Compound:
     fraction_unbound_plasma: float = 1.0
     hepatic_intrinsic_clearance_L_per_h: float = 0.0
     renal_clearance_L_per_h: float = 0.0
+    metabolism: tuple[Metabolism, ...] = ()
+    inhibits: tuple[Inhibition, ...] = ()
     molecular_weight: float | None = None
 
     def __post_init__(self) -> None:
@@ -72,6 +84,26 @@ class Compound:
             raise ValueError("renal_clearance_L_per_h must be non-negative")
         if self.molecular_weight is not None and self.molecular_weight <= 0:
             raise ValueError(f"molecular_weight must be positive, got {self.molecular_weight}")
+        enzymes = [pathway.enzyme for pathway in self.metabolism]
+        if len(enzymes) != len(set(enzymes)):
+            raise ValueError(
+                f"{self.name!r} lists the same enzyme twice in metabolism; "
+                "combine the pathways into one"
+            )
+
+    @property
+    def is_saturable(self) -> bool:
+        """Whether any pathway can saturate, making exposure non-linear in dose."""
+        return any(pathway.vmax_mg_per_h > 0 for pathway in self.metabolism)
+
+    @property
+    def linear_hepatic_clearance_L_per_h(self) -> float:
+        """Total hepatic intrinsic clearance in the low-concentration limit.
+
+        What the compound's clearance tends to at doses far below saturation,
+        including both its first-order and its saturable pathways.
+        """
+        return intrinsic_clearance(self.metabolism, self.hepatic_intrinsic_clearance_L_per_h)
 
     def kp(self, tissue: str) -> float:
         """Tissue-to-plasma partition coefficient for one tissue."""

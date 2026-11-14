@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
 
 from .model import PBPKModel
 
-__all__ = ["Result"]
+if TYPE_CHECKING:
+    from .coupled import CoupledModel
+
+__all__ = ["Result", "Study"]
 
 
 @dataclass(frozen=True)
@@ -168,3 +172,65 @@ class Result:
         header = ",".join(data)
         matrix = np.column_stack(list(data.values()))
         np.savetxt(path, matrix, delimiter=",", header=header, comments="", fmt="%.8g")
+
+
+@dataclass(frozen=True)
+class Study:
+    """The outcome of simulating several compounds together.
+
+    Holds one `Result` per compound. The results are not interchangeable with
+    separate single-compound runs: compounds sharing a metabolising enzyme
+    competed for it during the integration, so each one's exposure reflects the
+    presence of the others.
+
+    Attributes:
+        results: One result per compound, in the order simulated.
+        system: The coupled model that produced them.
+    """
+
+    results: list[Result]
+    system: CoupledModel
+
+    def __getitem__(self, key: str | int) -> Result:
+        """The result for one compound, by name or by position."""
+        if isinstance(key, int):
+            return self.results[key]
+        for result in self.results:
+            if result.model.compound.name == key:
+                return result
+        available = ", ".join(self.names)
+        raise KeyError(f"no compound named {key!r}; available: {available}")
+
+    def __iter__(self):
+        return iter(self.results)
+
+    def __len__(self) -> int:
+        return len(self.results)
+
+    @property
+    def names(self) -> list[str]:
+        """The compound names, in the order simulated."""
+        return [result.model.compound.name for result in self.results]
+
+    @property
+    def time_h(self) -> NDArray[np.float64]:
+        """The shared output time grid."""
+        return self.results[0].time_h
+
+    def interacting_enzymes(self) -> dict[str, list[str]]:
+        """Enzymes contested by more than one compound, and who contests them.
+
+        The pairs whose exposure could not have been predicted by simulating
+        each compound on its own.
+        """
+        return self.system.interacting_enzymes()
+
+    def mass_balance_error(self) -> float:
+        """The largest departure from conservation of mass across all compounds."""
+        return max(result.mass_balance_error() for result in self.results)
+
+    def summary(self, series: str = "plasma") -> dict[str, dict[str, float]]:
+        """Per-compound PK metrics, keyed by compound name."""
+        return {
+            result.model.compound.name: result.summary(series) for result in self.results
+        }
