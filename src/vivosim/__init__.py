@@ -26,28 +26,48 @@ Example:
 from .compound import Compound
 from .dosing import Dose, IVBolus, IVInfusion, OralDose, Regimen, repeated
 from .model import PBPKModel
+from .partitioning import (
+    MolecularProperties,
+    apparent_logd,
+    compound_from_properties,
+    predict_partition_coefficients,
+    volume_of_distribution_L_per_kg,
+)
 from .physiology import MOUSE, RAT, SPECIES, Physiology, TissueSpec, get_physiology
 from .results import Result
 from .simulate import simulate
+from .tissue_composition import (
+    PLASMA_COMPOSITION,
+    RAT_TISSUE_COMPOSITION,
+    TissueComposition,
+)
 
 __version__ = "0.0.1"
 
 __all__ = [
     "MOUSE",
+    "PLASMA_COMPOSITION",
     "RAT",
+    "RAT_TISSUE_COMPOSITION",
     "SPECIES",
     "Compound",
     "Dose",
     "IVBolus",
     "IVInfusion",
+    "MolecularProperties",
     "OralDose",
     "PBPKModel",
     "Physiology",
     "Regimen",
     "Result",
+    "TissueComposition",
     "TissueSpec",
     "__version__",
+    "apparent_logd",
+    "compound_from_properties",
     "get_physiology",
+    "predict_partition_coefficients",
     "repeated",
     "simulate",
+    "volume_of_distribution_L_per_kg",
 ]

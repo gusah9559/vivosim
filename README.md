@@ -74,6 +74,68 @@ Regimen(
 repeated(OralDose(amount_mg=5.0, absorption_rate_const_per_h=0.9), every_h=12, count=6)
 ```
 
+## Starting from a molecular structure
+
+The partition coefficients above do not have to be supplied by hand. They can
+be predicted from the molecule itself, because a compound distributes into a
+tissue by dissolving in that tissue's lipid and water — so lipophilicity,
+ionization state and the known lipid content of each organ are enough to
+compute where it goes.
+
+```python
+from vivosim import compound_from_properties, simulate, get_physiology, IVBolus, Regimen
+from vivosim.structure import properties_from_smiles
+
+properties = properties_from_smiles(
+    "CC(C)Cc1ccc(cc1)C(C)C(=O)O",   # ibuprofen
+    fraction_unbound_plasma=0.01,   # measured, not predicted
+    pka=4.4,                        # measured, not predicted
+)
+compound = compound_from_properties(properties, hepatic_intrinsic_clearance_L_per_h=1.2)
+
+result = simulate(compound, get_physiology("rat"), Regimen(IVBolus(1.0)), duration_h=24)
+```
+
+Structure reading needs RDKit, an optional dependency (`pip install rdkit`).
+Without it the rest of the package works unchanged and you supply `Kp` values
+directly.
+
+### What is predicted, and what is measured
+
+This distinction is the whole honesty of the method, so it is enforced in the
+API rather than left to the docs — an ionizable structure given without a pKa
+raises rather than silently defaulting to neutral.
+
+| Quantity | Source |
+|---|---|
+| Molecular weight, polar surface area | Exact, from the structure |
+| logP | Estimated from the structure (Crippen), ~1 log unit of scatter |
+| Tissue partition coefficients | Predicted, from logP + pKa + tissue composition |
+| pKa | **Measured.** Not predicted here; a wrong pKa distorts every Kp |
+| Plasma protein binding | **Measured.** Not predictable to the needed accuracy |
+| Metabolic clearance | **Measured.** Normally scaled from microsomes or hepatocytes |
+
+What this buys you is *distribution*: where the compound goes and how long it
+stays. That is the difference between a compound cleared in an hour and one
+that sits in fat for a week, and it does fall out of structure alone.
+
+What it does not buy you is *effect*. Nothing here predicts whether a compound
+works, or what it does to an animal. Predicted partition coefficients are a
+structured starting hypothesis to be replaced by measurement, not an answer.
+The method is known to do poorly on compounds that are actively transported,
+that bind tissue components specifically, or that are strong bases accumulating
+in acidic phospholipid — for which the Rodgers & Rowland extension is the
+better choice and is not implemented yet.
+
+Check a prediction before building on it. The cheapest check is the volume of
+distribution, which follows from the Kp values alone and is widely measured:
+
+```python
+from vivosim import volume_of_distribution_L_per_kg
+
+volume_of_distribution_L_per_kg(compound, get_physiology("rat"))
+```
+
 ## Model structure
 
 Blood leaves the venous pool, crosses the lung, and becomes arterial blood that
@@ -105,8 +167,9 @@ Named so that nobody mistakes an absent mechanism for a prediction:
   dose.
 - Active transport, enterohepatic recycling, biliary excretion.
 - Metabolites. Only the parent compound is tracked.
-- Partition coefficient prediction from molecular structure.
 - Drug-drug interactions.
+- Partitioning of strong bases into acidic phospholipid (Rodgers & Rowland).
+- pKa prediction from structure.
 - Population variability. One simulation describes one animal.
 
 ## Validation
@@ -125,6 +188,10 @@ independently of the implementation:
 - **First pass.** An oral dose gives lower exposure than the same intravenous
   dose when the liver clears the compound, and identical exposure when it does
   not.
+- **Real molecules.** Computed molecular weights match the true values; logP
+  ranks caffeine below ibuprofen below diazepam; ibuprofen, an ionized and
+  heavily bound acid, is predicted to stay near plasma volume, as it measurably
+  does, while neutral lipophilic diazepam distributes into tissue.
 
 ```bash
 pytest
