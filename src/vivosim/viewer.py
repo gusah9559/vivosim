@@ -31,6 +31,7 @@ from .interaction import InteractionReport
 from .partitioning import volume_of_distribution_L_per_kg
 from .population import PopulationResult
 from .results import Result, Study
+from .validation import ValidationResult, validate_many
 
 __all__ = ["render_html", "show", "build_payload"]
 
@@ -90,7 +91,11 @@ _BULK_START_X = 52
 Displayable = Result | Study | InteractionReport | PopulationResult
 
 
-def build_payload(result: Displayable, title: str | None = None) -> dict[str, Any]:
+def build_payload(
+    result: Displayable,
+    title: str | None = None,
+    validations: list[ValidationResult] | None = None,
+) -> dict[str, Any]:
     """Assemble everything the viewer page needs, as plain JSON-ready data.
 
     Separated from file writing so the payload can be inspected, tested, or
@@ -143,6 +148,7 @@ def build_payload(result: Displayable, title: str | None = None) -> dict[str, An
         "compounds": blocks,
         "interaction": _interaction_block(report),
         "population": _population_block(population),
+        "validation": _validation_block(validations),
         "footer": _footer(results),
     }
 
@@ -208,7 +214,13 @@ def _interaction_block(report: InteractionReport | None) -> dict[str, Any] | Non
     }
 
 
-def render_html(result: Displayable, path: str | Path, *, title: str | None = None) -> Path:
+def render_html(
+    result: Displayable,
+    path: str | Path,
+    *,
+    title: str | None = None,
+    validations: list[ValidationResult] | None = None,
+) -> Path:
     """Write a self-contained interactive viewer for a result.
 
     Args:
@@ -219,7 +231,7 @@ def render_html(result: Displayable, path: str | Path, *, title: str | None = No
     Returns:
         The path written.
     """
-    payload = build_payload(result, title)
+    payload = build_payload(result, title, validations)
     template = _TEMPLATE.read_text(encoding="utf-8")
 
     heading = payload["title"]
@@ -320,22 +332,27 @@ def _describe_regimen(result: Result) -> str:
     parts: list[str] = []
     for dose in doses[:4]:
         if isinstance(dose, IVBolus):
-            parts.append(f"{dose.amount_mg:g} mg IV bolus at {dose.time_h:g} h")
+            parts.append(f"{_dose(dose.amount_mg)} mg IV bolus at {dose.time_h:g} h")
         elif isinstance(dose, IVInfusion):
             parts.append(
-                f"{dose.amount_mg:g} mg IV over {dose.duration_h:g} h "
+                f"{_dose(dose.amount_mg)} mg IV over {dose.duration_h:g} h "
                 f"from {dose.start_h:g} h"
             )
         elif isinstance(dose, OralDose):
             parts.append(
-                f"{dose.amount_mg:g} mg oral at {dose.time_h:g} h "
+                f"{_dose(dose.amount_mg)} mg oral at {dose.time_h:g} h "
                 f"(ka {dose.absorption_rate_const_per_h:g}/h)"
             )
     if len(doses) > 4:
         parts.append(f"and {len(doses) - 4} more")
 
     total = result.model.regimen.total_amount_mg
-    return " · ".join(parts) + f" — {total:g} mg total"
+    return " · ".join(parts) + f" — {_dose(total)} mg total"
+
+
+def _dose(amount_mg: float) -> str:
+    """A dose amount without the spurious precision of a per-kilogram product."""
+    return f"{float(f'{amount_mg:.4g}'):g}"
 
 
 def _tiles(result: Result) -> list[dict[str, str]]:
@@ -484,6 +501,21 @@ _GLOSSARY: dict[str, str] = {
         "Exposure together divided by exposure alone. Above 1 means the other "
         "compound made this one build up."
     ),
+    "Within 2-fold": (
+        "The share of measurements the model predicted within a factor of two "
+        "of what was measured. The conventional acceptance bar for a "
+        "prediction of this kind -- a weak bar, used because these "
+        "predictions carry large parameter uncertainty."
+    ),
+    "Bias": (
+        "Whether the prediction runs systematically high or low. 1.00 would "
+        "be unbiased; 2.00 would mean predicting twice the truth on average."
+    ),
+    "Precision": (
+        "The typical size of the miss, counting errors in either direction. "
+        "1.00 would be exact. A model can be unbiased and still imprecise."
+    ),
+    "Measurements": "How many measured concentrations the comparison used.",
     "Spread": (
         "How many times larger the high-exposure tail is than the low one. "
         "Near 1 means the dose behaves the same in everyone; a large value "
@@ -534,4 +566,43 @@ def _population_block(population: PopulationResult | None) -> dict[str, Any] | N
         "aucP5": summary["auc_p5"],
         "aucP95": summary["auc_p95"],
         "foldRange": summary["auc_fold_range"],
+    }
+
+
+def _validation_block(
+    validations: list[ValidationResult] | None,
+) -> dict[str, Any] | None:
+    """Predicted against measured, when a comparison was made."""
+    if not validations:
+        return None
+
+    pooled = validate_many(validations)
+    provenances = {v.provenance for v in validations}
+    sources = {v.observed.source for v in validations if v.observed.source}
+
+    subjects = []
+    for comparison in validations:
+        usable = (comparison.observed.concentration > 0) & (comparison.predicted > 0)
+        subjects.append(
+            {
+                "subject": comparison.observed.subject,
+                "time": _clean(comparison.observed.time_h[usable]),
+                "observed": _clean(comparison.observed.concentration[usable]),
+                "predicted": _clean(comparison.predicted[usable]),
+                "withinTwoFold": comparison.fraction_within_two_fold,
+            }
+        )
+
+    return {
+        "subjects": subjects,
+        # A mixed set would make the label meaningless, so say so rather than
+        # picking one. The distinction is the whole value of the figure.
+        "provenance": provenances.pop() if len(provenances) == 1 else "mixed",
+        "source": " · ".join(sorted(sources)),
+        "n": pooled.get("n", 0),
+        "withinTwoFold": pooled.get("within_two_fold", float("nan")),
+        "withinOneAndAHalfFold": pooled.get("within_1_5_fold", float("nan")),
+        "averageFoldError": pooled.get("average_fold_error", float("nan")),
+        "absoluteAverageFoldError": pooled.get("absolute_average_fold_error", float("nan")),
+        "worstFoldError": pooled.get("worst_fold_error", float("nan")),
     }

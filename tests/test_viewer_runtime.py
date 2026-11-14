@@ -250,3 +250,48 @@ def test_the_3d_view_is_built(chrome: str, tmp_path: Path) -> None:
     # Terms must be able to explain themselves to a reader who did not build
     # the model.
     assert 'class="label term"' in dom or 'class="term"' in dom
+
+
+def render_validation(tmp_path: Path) -> Path:
+    """A prediction drawn against measurements."""
+    import numpy as np
+
+    from vivosim.validation import ObservedProfile, validate
+
+    compound = Compound(
+        name="Validated",
+        default_partition_coefficient=2.0,
+        fraction_unbound_plasma=0.5,
+        hepatic_intrinsic_clearance_L_per_h=2.0,
+    )
+    simulation = simulate(compound, RAT, Regimen(IVBolus(1.0)), duration_h=24)
+    times = np.array([0.5, 2.0, 6.0, 12.0, 20.0])
+    truth = np.interp(times, simulation.time_h, simulation.plasma_concentration())
+    observed = ObservedProfile(
+        time_h=times,
+        concentration=truth * np.array([1.0, 1.3, 0.8, 3.0, 1.1]),
+        subject="subject A",
+        source="synthetic",
+    )
+    comparison = validate(simulation, observed, provenance="prediction")
+    return render_html(simulation, tmp_path / "val.html", validations=[comparison])
+
+
+def test_validation_page_loads_without_throwing(chrome: str, tmp_path: Path) -> None:
+    dom = load_dom(chrome, render_validation(tmp_path))
+    error = re.search(r'id="startup-error">(.*?)</pre>', dom, re.S)
+    assert error is None, f"the viewer threw on load: {error.group(1) if error else ''}"
+
+
+def test_validation_page_draws_both_figures(chrome: str, tmp_path: Path) -> None:
+    dom = load_dom(chrome, render_validation(tmp_path))
+    assert 'class="unity"' in dom, "the line of perfect agreement was not drawn"
+    assert 'class="fold-bound"' in dom, "the two-fold band was not drawn"
+    # One dot per usable measurement, across both figures.
+    assert dom.count('class="obs-dot"') == 10
+    assert "prediction rather than a fit" in dom
+
+
+def test_pages_without_measurements_hide_the_card(chrome: str, tmp_path: Path) -> None:
+    dom = load_dom(chrome, render_demo(tmp_path))
+    assert 'id="validation-card" hidden' in dom

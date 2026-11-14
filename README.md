@@ -341,6 +341,12 @@ The page carries:
   between them *is* the interaction.
 - **A compound selector**, when several were simulated, switching every panel
   on the page between them.
+- **A validation panel**, when given comparisons against measured data: the
+  predicted-against-measured scatter with the line of perfect agreement and the
+  two-fold band, and the same misses against sample time — which shows *when*
+  the model goes wrong rather than only by how much. It states on the page
+  whether the parameters were predicted or fitted, because that is the one
+  thing a reader cannot tell by looking.
 - **A population panel**, when given a population result: the percentile
   envelope with real individual profiles behind it, the exposure histogram, and
   the mean-parameter animal drawn against the population median — which is not
@@ -442,6 +448,12 @@ model is better at where a compound goes than at how fast it gets in.
 
 ```bash
 python examples/validate_theophylline.py
+```
+
+The same comparison can be rendered as a page:
+
+```python
+render_html(result, "validation.html", validations=comparisons)
 ```
 
 The dataset is downloaded rather than vendored, so this repository

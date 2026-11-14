@@ -430,3 +430,84 @@ def test_a_population_renders_a_page(tmp_path) -> None:
     )
     assert "Across a population" in html
     assert "__PAYLOAD__" not in html
+
+
+# -- against measured data ------------------------------------------------
+
+
+def synthetic_validation():
+    """A comparison built from a simulation plus measurements around it."""
+    from vivosim.validation import ObservedProfile, validate
+
+    simulation = result(duration_h=24)
+    times = np.array([0.5, 2.0, 6.0, 12.0])
+    truth = np.interp(times, simulation.time_h, simulation.plasma_concentration())
+    # One point deliberately outside the two-fold band.
+    observed = ObservedProfile(
+        time_h=times,
+        concentration=truth * np.array([1.0, 1.2, 0.9, 4.0]),
+        subject="subject A",
+        source="synthetic",
+    )
+    return simulation, [validate(simulation, observed, provenance="prediction")]
+
+
+def test_a_plain_result_carries_no_validation() -> None:
+    assert build_payload(result())["validation"] is None
+
+
+def test_a_validation_block_reports_the_pooled_metrics() -> None:
+    simulation, comparisons = synthetic_validation()
+    block = build_payload(simulation, validations=comparisons)["validation"]
+    assert block is not None
+    assert block["n"] == 4
+    assert block["provenance"] == "prediction"
+    assert block["source"] == "synthetic"
+    assert 0.0 < block["withinTwoFold"] < 1.0
+    assert block["worstFoldError"] > 2.0
+
+
+def test_validation_points_travel_with_the_page() -> None:
+    simulation, comparisons = synthetic_validation()
+    block = build_payload(simulation, validations=comparisons)["validation"]
+    subject = block["subjects"][0]
+    assert subject["subject"] == "subject A"
+    assert len(subject["time"]) == len(subject["observed"]) == len(subject["predicted"])
+    assert all(value > 0 for value in subject["observed"])
+
+
+def test_a_mixed_provenance_is_labelled_as_mixed() -> None:
+    # Calling a half-fitted comparison a prediction would be the one lie this
+    # figure must not tell.
+    from vivosim.validation import ObservedProfile, validate
+
+    simulation = result(duration_h=24)
+    times = np.array([1.0, 5.0])
+    truth = np.interp(times, simulation.time_h, simulation.plasma_concentration())
+    observed = ObservedProfile(time_h=times, concentration=truth)
+    comparisons = [
+        validate(simulation, observed, provenance="prediction"),
+        validate(simulation, observed, provenance="fit"),
+    ]
+    assert build_payload(simulation, validations=comparisons)["validation"][
+        "provenance"
+    ] == "mixed"
+
+
+def test_a_validated_page_renders(tmp_path) -> None:
+    simulation, comparisons = synthetic_validation()
+    html = render_html(
+        simulation, tmp_path / "v.html", validations=comparisons
+    ).read_text(encoding="utf-8")
+    assert "Against measured data" in html
+    assert "__PAYLOAD__" not in html
+
+
+def test_doses_are_reported_without_spurious_precision() -> None:
+    # A dose computed from mg/kg times a body weight lands on things like
+    # 319.99199999, which should not be printed at the reader.
+    payload = build_payload(
+        simulate(compound(), RAT, Regimen(IVBolus(4.02 * 79.6)), duration_h=4)
+    )
+    assert "319.992" not in block(payload)["regimen"]
+    assert "320" in block(payload)["regimen"]
