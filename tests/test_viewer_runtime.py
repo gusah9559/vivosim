@@ -198,3 +198,55 @@ def test_single_compound_page_hides_the_interaction_card(chrome: str, tmp_path: 
     dom = load_dom(chrome, render_demo(tmp_path))
     assert 'id="interaction-card" hidden' in dom
     assert 'id="compound-controls" hidden' in dom
+
+
+def render_population(tmp_path: Path) -> Path:
+    """A population of individuals on one dose."""
+    from vivosim import Variability, simulate_population
+
+    compound = Compound(
+        name="Population drug",
+        partition_coefficients={"adipose": 6.0, "liver": 4.0},
+        default_partition_coefficient=2.0,
+        fraction_unbound_plasma=0.2,
+        hepatic_intrinsic_clearance_L_per_h=0.4,
+    )
+    result = simulate_population(
+        compound,
+        RAT,
+        Regimen(IVBolus(2.0)),
+        n=30,
+        seed=1,
+        duration_h=36,
+        variability=Variability(hepatic_clearance=0.5),
+    )
+    return render_html(result, tmp_path / "pop.html")
+
+
+def test_population_page_loads_without_throwing(chrome: str, tmp_path: Path) -> None:
+    dom = load_dom(chrome, render_population(tmp_path))
+    error = re.search(r'id="startup-error">(.*?)</pre>', dom, re.S)
+    assert error is None, f"the viewer threw on load: {error.group(1) if error else ''}"
+
+
+def test_population_page_draws_the_band_and_histogram(chrome: str, tmp_path: Path) -> None:
+    dom = load_dom(chrome, render_population(tmp_path))
+    assert 'class="band-outer"' in dom, "the percentile band was not drawn"
+    assert 'class="band-inner"' in dom
+    assert 'class="median-path"' in dom, "the median was not drawn"
+    assert 'class="trace"' in dom, "individual profiles were not drawn"
+    assert 'class="bar"' in dom, "the exposure histogram was not drawn"
+
+
+def test_pages_without_a_population_hide_the_card(chrome: str, tmp_path: Path) -> None:
+    dom = load_dom(chrome, render_demo(tmp_path))
+    assert 'id="population-card" hidden' in dom
+
+
+def test_the_3d_view_is_built(chrome: str, tmp_path: Path) -> None:
+    dom = load_dom(chrome, render_demo(tmp_path))
+    assert 'class="orb"' in dom, "the 3D organ view was not built"
+    assert 'class="ring"' in dom
+    # Terms must be able to explain themselves to a reader who did not build
+    # the model.
+    assert 'class="label term"' in dom or 'class="term"' in dom

@@ -24,6 +24,14 @@ Example:
 """
 
 from .compound import Compound
+from .conditions import (
+    CONDITIONS,
+    HEALTHY,
+    Condition,
+    hepatic_impairment,
+    obesity,
+    renal_impairment,
+)
 from .coupled import CoupledModel
 from .dosing import Dose, IVBolus, IVInfusion, OralDose, Regimen, repeated
 from .interaction import (
@@ -41,6 +49,7 @@ from .partitioning import (
     predict_partition_coefficients,
     volume_of_distribution_L_per_kg,
 )
+from .pharmacodynamics import EffectProfile, EmaxModel, effect_of
 from .physiology import MOUSE, RAT, SPECIES, Physiology, TissueSpec, get_physiology
 from .population import (
     Individual,
@@ -65,10 +74,14 @@ __all__ = [
     "RAT",
     "RAT_TISSUE_COMPOSITION",
     "SPECIES",
+    "CONDITIONS",
     "Compound",
+    "Condition",
     "CompoundInteraction",
     "CoupledModel",
     "Dose",
+    "EffectProfile",
+    "EmaxModel",
     "Inhibition",
     "InteractionReport",
     "IVBolus",
@@ -77,6 +90,7 @@ __all__ = [
     "MolecularProperties",
     "OralDose",
     "PBPKModel",
+    "HEALTHY",
     "Individual",
     "Physiology",
     "PopulationResult",
@@ -90,9 +104,13 @@ __all__ = [
     "apparent_logd",
     "assess_interaction",
     "classify_ratio",
+    "effect_of",
     "compound_from_properties",
     "get_physiology",
+    "hepatic_impairment",
+    "obesity",
     "predict_partition_coefficients",
+    "renal_impairment",
     "repeated",
     "sample_population",
     "simulate_population",

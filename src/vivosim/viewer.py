@@ -29,6 +29,7 @@ import numpy as np
 from .dosing import IVBolus, IVInfusion, OralDose
 from .interaction import InteractionReport
 from .partitioning import volume_of_distribution_L_per_kg
+from .population import PopulationResult
 from .results import Result, Study
 
 __all__ = ["render_html", "show", "build_payload"]
@@ -37,6 +38,11 @@ _TEMPLATE = Path(__file__).with_name("templates") / "viewer.html"
 
 # Decades of concentration the anatomical shading spans below the peak.
 _ANATOMY_DECADES = 3
+
+# How many individual profiles to draw behind the population band, and how many
+# bins the exposure histogram uses.
+_POPULATION_TRACES = 24
+_AUC_BINS = 24
 
 # Where each tissue sits in the schematic. Coordinates are in the anatomy
 # SVG's own 440x300 viewBox. Discrete organs are placed anatomically; the bulk
@@ -81,7 +87,7 @@ _BULK_GAP = 6
 _BULK_START_X = 52
 
 
-Displayable = Result | Study | InteractionReport
+Displayable = Result | Study | InteractionReport | PopulationResult
 
 
 def build_payload(result: Displayable, title: str | None = None) -> dict[str, Any]:
@@ -100,6 +106,10 @@ def build_payload(result: Displayable, title: str | None = None) -> dict[str, An
     Returns:
         A JSON-serialisable mapping.
     """
+    population = result if isinstance(result, PopulationResult) else None
+    if population is not None:
+        result = population.reference
+
     report = result if isinstance(result, InteractionReport) else None
     if report is not None:
         results = [entry.together for entry in report]
@@ -132,6 +142,7 @@ def build_payload(result: Displayable, title: str | None = None) -> dict[str, An
         "glossary": _GLOSSARY,
         "compounds": blocks,
         "interaction": _interaction_block(report),
+        "population": _population_block(population),
         "footer": _footer(results),
     }
 
@@ -473,8 +484,54 @@ _GLOSSARY: dict[str, str] = {
         "Exposure together divided by exposure alone. Above 1 means the other "
         "compound made this one build up."
     ),
+    "Spread": (
+        "How many times larger the high-exposure tail is than the low one. "
+        "Near 1 means the dose behaves the same in everyone; a large value "
+        "means some individuals see several times the exposure of others."
+    ),
     "Effect": (
         "How large that change is: weak from 1.25 times, moderate from 2, "
         "strong from 5. Below 1.25 it is not treated as an effect."
     ),
 }
+
+
+def _population_block(population: PopulationResult | None) -> dict[str, Any] | None:
+    """The spread of exposure across a simulated population, when there is one."""
+    if population is None:
+        return None
+
+    low, median, high = population.percentile_band(5.0, 95.0)
+    inner_low, _, inner_high = population.percentile_band(25.0, 75.0)
+
+    # A handful of individual profiles, evenly spaced through the population so
+    # the sample is not just the first few drawn. They show that the band is an
+    # envelope over real animals rather than a smooth abstraction.
+    sample_count = min(_POPULATION_TRACES, population.size)
+    step = max(1, population.size // sample_count)
+    traces = [
+        _clean(population.concentrations[i])
+        for i in range(0, population.size, step)
+    ][:sample_count]
+
+    counts, edges = np.histogram(population.auc, bins=_AUC_BINS)
+    summary = population.summary()
+
+    return {
+        "n": population.size,
+        "low": _clean(low),
+        "median": _clean(median),
+        "high": _clean(high),
+        "innerLow": _clean(inner_low),
+        "innerHigh": _clean(inner_high),
+        "traces": traces,
+        "reference": _clean(population.reference.plasma_concentration()),
+        "aucHistogram": {
+            "counts": [int(c) for c in counts],
+            "edges": _clean(edges),
+        },
+        "aucMedian": summary["auc_median"],
+        "aucP5": summary["auc_p5"],
+        "aucP95": summary["auc_p95"],
+        "foldRange": summary["auc_fold_range"],
+    }

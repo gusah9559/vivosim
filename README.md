@@ -1,5 +1,7 @@
 # vivosim
 
+[![tests](https://github.com/gusah9559/vivosim/actions/workflows/ci.yml/badge.svg)](https://github.com/gusah9559/vivosim/actions/workflows/ci.yml)
+
 Physiologically based pharmacokinetic (PBPK) simulation for preclinical species.
 
 Given a compound's distribution and clearance parameters, an animal's
@@ -217,6 +219,58 @@ and enough substrate still outruns the inhibitor. Non-competitive inhibition,
 mechanism-based inactivation and enzyme induction behave differently and are
 not implemented.
 
+## Disease states
+
+Every parameter set above describes a healthy animal, and real subjects often
+are not. A damaged liver can leave several times the exposure from the same
+dose — which is how a routine dose becomes an overdose.
+
+```python
+from vivosim import hepatic_impairment, obesity, renal_impairment
+
+sick_compound, sick_body = hepatic_impairment("severe").apply(compound, physiology)
+```
+
+A condition changes both sides of the problem, because disease does not respect
+that separation: hepatic impairment reduces liver blood flow *and* enzyme
+capacity *and* raises the unbound fraction, and all three push exposure the
+same way. Flows and volumes are rebalanced so the animal still conserves mass —
+a condition that broke that would corrupt every number downstream, so it is
+tested for every condition shipped.
+
+These are *pharmacokinetic* states: a body altered by disease, moving a
+compound around differently. Nothing here models the disease itself, its
+progression, or whether a compound treats it. An impaired animal here is a
+healthy animal with different numbers, not a sick one.
+
+## Concentration to effect
+
+```python
+from vivosim import EmaxModel, effect_of
+
+model = EmaxModel(
+    baseline=0.0, e_max=100.0, ec50_mg_per_L=0.4,   # all measured, not predicted
+    equilibration_rate_const_per_h=0.4,             # effect lags concentration
+)
+response = effect_of(result, model)
+
+response.time_of_peak_h     # effect peaks after concentration does
+response.saturation         # 0.97 — the response is already maxed out
+response.time_above(50.0)   # hours spent above half-maximal
+```
+
+**Read this before using it.** Given *measured* parameters relating a
+concentration to a *measured* response, this computes how that response rises
+and falls. It can show that an effect peaks two hours after a dose, that a
+second dose lands before the first wore off, or that doubling a dose barely
+moves a response already near its ceiling.
+
+It cannot tell you whether a compound works. Emax and EC50 are not predictable
+from a molecule — they come from an experiment that already measured the effect
+you are asking about. Invent them and the curve means nothing. And "effect"
+here is one measured readout, not a disease: whether moving that readout cures
+anything is a different question, and not one any simulation answers.
+
 ## A population, not one animal
 
 Every result above describes one animal built from mean parameters. No such
@@ -287,6 +341,10 @@ The page carries:
   between them *is* the interaction.
 - **A compound selector**, when several were simulated, switching every panel
   on the page between them.
+- **A population panel**, when given a population result: the percentile
+  envelope with real individual profiles behind it, the exposure histogram, and
+  the mean-parameter animal drawn against the population median — which is not
+  the same curve, and seeing that is half the point of simulating a population.
 - **Headline metrics** — peak plasma, time of peak, AUC, Vss, fraction
   eliminated, and the mass balance error, so a bad integration is visible rather
   than hidden.
@@ -299,6 +357,11 @@ The page carries:
   the most loaded one.
 - **Small multiples** of every tissue on a shared scale.
 - **A table view** of every plotted value, so nothing is visible only as colour.
+- **A rotatable 3D arrangement** of the organs, shaded and lit by
+  concentration. The organs are spheres, not meshes: a plausible-looking organ
+  nobody measured would be a worse lie than an obvious abstraction.
+- **Terms that explain themselves** on hover, because a viewer only a
+  pharmacologist can read is not much use to whoever commissioned the model.
 
 Charts are drawn as inline SVG with no plotting library, which is what keeps the
 file self-contained. Light and dark are both designed rather than inverted, and
@@ -335,10 +398,9 @@ Named so that nobody mistakes an absent mechanism for a prediction:
 - Non-competitive inhibition, mechanism-based inactivation, enzyme induction.
 - Metabolites. Only the parent compound is tracked.
 - Correlation between sampled population parameters.
-- Pharmacodynamics. Nothing here predicts whether a compound has an effect,
-  only where it goes and how long it stays.
-- Disease states. A parameter set describes a healthy animal unless you
-  override it yourself.
+- Disease *progression*, and whether any compound treats anything.
+- Emax parameters from structure. The PK/PD layer interpolates between
+  measurements; it does not predict them.
 - Partitioning of strong bases into acidic phospholipid (Rodgers & Rowland).
 - pKa prediction from structure.
 
@@ -366,6 +428,12 @@ independently of the implementation:
   as blood delivers it — a known pharmacological consequence of putting
   clearance inside the circulation rather than applying it to the compound
   alone.
+- **Conditions stay balanced.** Every disease state still sums flows to cardiac
+  output and volumes to body weight, and still conserves mass.
+- **Extraction-dependence, twice.** Hepatic impairment hits a slowly cleared
+  compound hardest and spares a flow-limited one; renal impairment leaves a
+  liver-cleared compound untouched. Neither was coded in — both follow from
+  clearance sitting inside the circulation.
 - **Interaction specificity.** Compounds sharing an enzyme raise each other's
   exposure; compounds on different enzymes reproduce their solo profiles.
   Overwhelming inhibition converges on the no-metabolism case.

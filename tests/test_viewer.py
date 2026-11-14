@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 
+import numpy as np
 import pytest
 
 from vivosim import (
@@ -354,3 +355,78 @@ def test_the_footer_names_every_compound(tmp_path) -> None:
 def test_multi_compound_payload_is_strict_json() -> None:
     payload = build_payload(interaction_result())
     assert json.loads(json.dumps(payload, allow_nan=False))["interaction"] is not None
+
+
+# -- population -----------------------------------------------------------
+
+
+def population_result():
+    from vivosim import Variability, simulate_population
+
+    return simulate_population(
+        compound(),
+        RAT,
+        Regimen(IVBolus(1.0)),
+        n=25,
+        seed=5,
+        duration_h=24,
+        variability=Variability(hepatic_clearance=0.5),
+    )
+
+
+def test_a_single_result_carries_no_population() -> None:
+    assert build_payload(result())["population"] is None
+
+
+def test_a_population_payload_carries_its_bands() -> None:
+    payload = build_payload(population_result())
+    band = payload["population"]
+    assert band is not None
+    assert band["n"] == 25
+    length = len(payload["time"])
+    for key in ("low", "median", "high", "innerLow", "innerHigh", "reference"):
+        assert len(band[key]) == length, key
+
+
+def test_the_population_bands_are_ordered() -> None:
+    band = build_payload(population_result())["population"]
+    for low, inner_low, median, inner_high, high in zip(
+        band["low"], band["innerLow"], band["median"], band["innerHigh"], band["high"],
+        strict=True,
+    ):
+        assert low <= inner_low + 1e-12
+        assert inner_low <= median + 1e-12
+        assert median <= inner_high + 1e-12
+        assert inner_high <= high + 1e-12
+
+
+def test_population_traces_are_real_individuals() -> None:
+    result = population_result()
+    band = build_payload(result)["population"]
+    # Every drawn trace has to match one of the simulated individuals, or the
+    # chart would show curves nobody computed.
+    rows = [list(row) for row in result.concentrations]
+    for trace in band["traces"]:
+        assert any(np.allclose(trace, row) for row in rows)
+
+
+def test_the_population_histogram_accounts_for_everyone() -> None:
+    result = population_result()
+    band = build_payload(result)["population"]
+    histogram = band["aucHistogram"]
+    assert sum(histogram["counts"]) == result.size
+    assert len(histogram["edges"]) == len(histogram["counts"]) + 1
+
+
+def test_the_population_payload_reports_its_spread() -> None:
+    band = build_payload(population_result())["population"]
+    assert band["aucP5"] <= band["aucMedian"] <= band["aucP95"]
+    assert band["foldRange"] >= 1.0
+
+
+def test_a_population_renders_a_page(tmp_path) -> None:
+    html = render_html(population_result(), tmp_path / "pop.html").read_text(
+        encoding="utf-8"
+    )
+    assert "Across a population" in html
+    assert "__PAYLOAD__" not in html

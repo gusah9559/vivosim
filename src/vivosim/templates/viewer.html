@@ -202,6 +202,11 @@
   #interaction-table th.num, #interaction-table td.num { padding-right: 26px; }
   .ratio { font-variant-numeric: tabular-nums; font-weight: 600; }
   .solo-path { fill: none; stroke-width: 2; stroke-dasharray: 5 4; opacity: 0.85; }
+  .trace { fill: none; stroke-width: 1; opacity: 0.22; }
+  .band-outer { opacity: 0.16; }
+  .band-inner { opacity: 0.26; }
+  .median-path { fill: none; stroke-width: 2.5; }
+  .bar { }
 
 
   /* 3D organ view. Built from CSS transforms rather than a WebGL library so
@@ -296,6 +301,27 @@
          aria-labelledby="interaction-desc"></svg>
     <desc id="interaction-desc"></desc>
   </figure>
+</section>
+
+<section class="card" id="population-card" hidden>
+  <h2>Across a population</h2>
+  <p class="hint" id="population-hint"></p>
+  <div class="tiles" id="population-tiles" style="margin-bottom:18px"></div>
+  <figure>
+    <svg id="population-chart" viewBox="0 0 880 330" role="img"
+         aria-labelledby="population-desc"></svg>
+    <desc id="population-desc"></desc>
+  </figure>
+  <figure style="margin-top:24px">
+    <svg id="auc-histogram" viewBox="0 0 880 200" role="img"
+         aria-labelledby="histogram-desc"></svg>
+    <desc id="histogram-desc"></desc>
+  </figure>
+  <p class="hint" style="margin-top:12px">Individuals differ in body weight,
+     organ size, plasma binding and above all in how much metabolising enzyme
+     they express. The band is where most of them fall; the thin traces are
+     real individuals from the population. Percentiles are computed at each
+     time point, so the envelope is not the profile of any one animal.</p>
 </section>
 
 <section class="card">
@@ -1361,6 +1387,223 @@ function explainTerms() {
   }
 }
 
+
+/* ---------- population ---------- */
+
+function buildPopulation() {
+  const data = DATA.population;
+  if (!data) return;
+  document.getElementById("population-card").hidden = false;
+
+  document.getElementById("population-hint").textContent =
+    data.n + " individuals were simulated on the same dose, each with their own " +
+    "body weight, organ sizes, plasma binding and metabolic capacity.";
+
+  const tiles = [
+    { label: "Individuals", value: String(data.n), unit: "" },
+    { label: "Median AUC", value: fmt(data.aucMedian, 1), unit: "mg\u00b7h/L" },
+    { label: "5th\u201395th", value: fmt(data.aucP5, 1) + "\u2013" + fmt(data.aucP95, 1), unit: "mg\u00b7h/L" },
+    { label: "Spread", value: fmt(data.foldRange, 2) + "\u00d7", unit: "" },
+  ];
+  const host = document.getElementById("population-tiles");
+  host.textContent = "";
+  for (const tile of tiles) {
+    const box = document.createElement("div");
+    box.className = "tile";
+    const label = document.createElement("div");
+    label.className = "label";
+    label.textContent = tile.label;
+    const value = document.createElement("div");
+    value.className = "value";
+    value.textContent = tile.value;
+    if (tile.unit) {
+      const unit = document.createElement("span");
+      unit.className = "unit";
+      unit.textContent = tile.unit;
+      value.appendChild(unit);
+    }
+    box.append(label, value);
+    host.appendChild(box);
+  }
+
+  drawPopulationChart();
+  drawHistogram();
+}
+
+function drawPopulationChart() {
+  const data = DATA.population;
+  if (!data) return;
+  const svg = document.getElementById("population-chart");
+  svg.textContent = "";
+
+  const box = { left: 62, right: 96, top: 14, bottom: 46, width: 880, height: 330 };
+  const w = box.width - box.left - box.right;
+  const h = box.height - box.top - box.bottom;
+  const tMax = DATA.time[DATA.time.length - 1] || 1;
+
+  let max = 0;
+  let minPositive = Infinity;
+  for (const v of data.high) {
+    if (v > max) max = v;
+  }
+  for (const v of data.low) {
+    if (v > 0 && v < minPositive) minPositive = v;
+  }
+  if (max <= 0) return;
+  const hi = max * 1.18;
+  const lo = Math.pow(10, Math.floor(Math.log10(Math.max(minPositive, hi / 1e4))));
+  const span = Math.log10(hi) - Math.log10(lo);
+  const x = (t) => box.left + (t / tMax) * w;
+  const y = (v) =>
+    box.top + h * (1 - (Math.log10(Math.max(v, lo)) - Math.log10(lo)) / span);
+
+  document.getElementById("population-desc").textContent =
+    "Plasma concentration across " + data.n + " simulated individuals: the median " +
+    "with the bands containing the middle half and the middle 90 percent of them, " +
+    "on a logarithmic vertical scale.";
+
+  for (let e = Math.log10(lo); e <= Math.log10(hi) + 1e-9; e += 1) {
+    const value = Math.pow(10, Math.round(e));
+    const yy = y(value);
+    if (yy < box.top - 1 || yy > box.top + h + 1) continue;
+    svg.appendChild(el("line", {
+      class: "grid-line", x1: box.left, x2: box.left + w, y1: yy, y2: yy,
+    }));
+    svg.appendChild(el("text", {
+      class: "tick", x: box.left - 9, y: yy + 3.5, "text-anchor": "end",
+    }, exponentLabel(value)));
+  }
+  svg.appendChild(el("line", {
+    class: "axis-line", x1: box.left, x2: box.left + w, y1: box.top + h, y2: box.top + h,
+  }));
+  for (const t of xTicks(tMax)) {
+    svg.appendChild(el("text", {
+      class: "tick", x: x(t), y: box.top + h + 19, "text-anchor": "middle",
+    }, fmt(t, t % 1 === 0 ? 0 : 1)));
+  }
+  svg.appendChild(el("text", {
+    class: "axis-title", x: box.left + w / 2, y: box.top + h + 38, "text-anchor": "middle",
+  }, "Time (hours)"));
+  svg.appendChild(el("text", {
+    class: "axis-title", x: box.left - 46, y: box.top + h / 2, "text-anchor": "middle",
+    transform: "rotate(-90 " + (box.left - 46) + " " + (box.top + h / 2) + ")",
+  }, "Plasma (mg/L)"));
+
+  const band = (lowValues, highValues, className) => {
+    let d = "";
+    for (let i = 0; i < lowValues.length; i += 1) {
+      d += (i === 0 ? "M" : "L") + x(DATA.time[i]).toFixed(2) + " " + y(highValues[i]).toFixed(2) + " ";
+    }
+    for (let i = lowValues.length - 1; i >= 0; i -= 1) {
+      d += "L" + x(DATA.time[i]).toFixed(2) + " " + y(lowValues[i]).toFixed(2) + " ";
+    }
+    svg.appendChild(el("path", { class: className, d: d.trim() + "Z", fill: css("--s1") }));
+  };
+  band(data.low, data.high, "band-outer");
+  band(data.innerLow, data.innerHigh, "band-inner");
+
+  // Real individuals behind the band, so it reads as an envelope over animals
+  // rather than as a smooth abstraction.
+  for (const trace of data.traces) {
+    let d = "";
+    let open = false;
+    for (let i = 0; i < trace.length; i += 1) {
+      if (trace[i] < lo) { open = false; continue; }
+      d += (open ? "L" : "M") + x(DATA.time[i]).toFixed(2) + " " + y(trace[i]).toFixed(2) + " ";
+      open = true;
+    }
+    svg.appendChild(el("path", { class: "trace", d: d.trim(), stroke: css("--s1") }));
+  }
+
+  const line = (values, className, colour) => {
+    let d = "";
+    let open = false;
+    for (let i = 0; i < values.length; i += 1) {
+      if (values[i] < lo) { open = false; continue; }
+      d += (open ? "L" : "M") + x(DATA.time[i]).toFixed(2) + " " + y(values[i]).toFixed(2) + " ";
+      open = true;
+    }
+    svg.appendChild(el("path", { class: className, d: d.trim(), stroke: colour }));
+  };
+  // The mean-parameter animal is not the median of the population it came
+  // from, and showing both is the clearest way to make that visible.
+  line(data.reference, "solo-path", css("--ink-muted"));
+  line(data.median, "median-path", css("--s1"));
+
+  svg.appendChild(el("text", {
+    class: "series-label", x: box.left + w + 8, y: y(data.median[data.median.length - 1]),
+    fill: css("--s1"),
+  }, "median"));
+  svg.appendChild(el("text", {
+    class: "series-label", x: box.left + w + 8,
+    y: y(data.reference[data.reference.length - 1]) + 14, fill: css("--ink-muted"),
+  }, "mean animal"));
+}
+
+function drawHistogram() {
+  const data = DATA.population;
+  if (!data) return;
+  const svg = document.getElementById("auc-histogram");
+  svg.textContent = "";
+
+  const counts = data.aucHistogram.counts;
+  const edges = data.aucHistogram.edges;
+  const box = { left: 62, right: 96, top: 14, bottom: 42, width: 880, height: 200 };
+  const w = box.width - box.left - box.right;
+  const h = box.height - box.top - box.bottom;
+
+  const maxCount = Math.max(...counts, 1);
+  const xMin = edges[0];
+  const xMax = edges[edges.length - 1];
+  const x = (v) => box.left + ((v - xMin) / (xMax - xMin)) * w;
+  const y = (c) => box.top + h * (1 - c / maxCount);
+
+  document.getElementById("histogram-desc").textContent =
+    "Distribution of total exposure across " + data.n + " individuals, with a " +
+    "median of " + fmt(data.aucMedian, 1) + " milligram-hours per litre.";
+
+  svg.appendChild(el("line", {
+    class: "axis-line", x1: box.left, x2: box.left + w, y1: box.top + h, y2: box.top + h,
+  }));
+
+  for (let i = 0; i < counts.length; i += 1) {
+    if (!counts[i]) continue;
+    const left = x(edges[i]);
+    const right = x(edges[i + 1]);
+    const top = y(counts[i]);
+    // A 2px gap keeps adjacent bars from reading as one block.
+    svg.appendChild(el("rect", {
+      class: "bar", x: left + 1, y: top,
+      width: Math.max(1, right - left - 2), height: box.top + h - top,
+      rx: 2, fill: css("--s1"),
+    }));
+  }
+
+  for (const [value, text, colour] of [
+    [data.aucP5, "5th", css("--ink-muted")],
+    [data.aucMedian, "median", css("--ink-2")],
+    [data.aucP95, "95th", css("--ink-muted")],
+  ]) {
+    svg.appendChild(el("line", {
+      class: "crosshair", x1: x(value), x2: x(value), y1: box.top, y2: box.top + h,
+    }));
+    svg.appendChild(el("text", {
+      class: "tick", x: x(value), y: box.top - 2, "text-anchor": "middle", fill: colour,
+    }, text));
+  }
+
+  const step = (xMax - xMin) / 5;
+  for (let i = 0; i <= 5; i += 1) {
+    const value = xMin + step * i;
+    svg.appendChild(el("text", {
+      class: "tick", x: x(value), y: box.top + h + 18, "text-anchor": "middle",
+    }, fmt(value, 1)));
+  }
+  svg.appendChild(el("text", {
+    class: "axis-title", x: box.left + w / 2, y: box.top + h + 36, "text-anchor": "middle",
+  }, "Total exposure, AUC (mg\u00b7h/L)"));
+}
+
 /* ---------- theme ---------- */
 
 const themeButton = document.getElementById("theme-toggle");
@@ -1372,6 +1615,8 @@ function applyTheme(mode) {
   buildMultiples();
   paintAnatomy();
   drawInteractionChart();
+  drawPopulationChart();
+  drawHistogram();
 }
 themeButton.addEventListener("click", () => {
   const current = document.documentElement.getAttribute("data-theme");
@@ -1394,6 +1639,7 @@ paintAnatomy();
 buildMultiples();
 buildTable();
 buildInteraction();
+buildPopulation();
 explainTerms();
 
 const prefersDark = window.matchMedia("(prefers-color-scheme: dark)");
